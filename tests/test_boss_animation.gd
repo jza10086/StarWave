@@ -45,7 +45,7 @@ func phase_motion(phase: int):
 	var iris_total := 0.0
 	var hub_total := 0.0
 	var worst_tip_time := 0.0
-	for frame in 2400:
+	for frame in 3600:
 		var old_rotation: float = c.boss.rotation
 		var old_iris: float = c.boss.iris_rotation
 		var old_hub: float = c.boss.hub_rotation
@@ -89,7 +89,7 @@ func phase_motion(phase: int):
 		peak = maxi(peak,c.bullets.size())
 		c._update_bullets(DT)
 	print("BOSS_ANIMATION phase=",phase," min_rotor_step=",minimum_rotor," min_tip_step=",minimum_tip," worst_tip_time=",worst_tip_time," min_iris_step=",minimum_iris," min_hub_step=",minimum_hub," speed_range=",Vector2(minimum_speed,maximum_speed)," max_acceleration=",maximum_acceleration," opening_range=",Vector2(minimum_opening,maximum_opening)," radius_range=",Vector2(minimum_radius,maximum_radius)," max_tip_step=",maximum_tip_step," stagger=",maximum_stagger," iris_lag=",maximum_lag," bank_max=",bank_range," emission_error=",emission_error," emitted=",emitted," max_batch=",max_batch," peak=",peak)
-	check(minimum_rotor>0,"rotor clockwise throughout two phrases / phase "+str(phase))
+	check(minimum_rotor>0,"rotor clockwise throughout complete score / phase "+str(phase))
 	check(minimum_tip>0,"all articulated tips clockwise incl hinge and bank / phase "+str(phase))
 	check(minimum_iris>0 and minimum_hub>0,"secondary rotors also clockwise / phase "+str(phase))
 	check(rotor_total-iris_total>5 and iris_total-hub_total>4,"distinct layer gearing / phase "+str(phase))
@@ -97,10 +97,10 @@ func phase_motion(phase: int):
 	check(maximum_acceleration<16,"bounded eased acceleration / phase "+str(phase))
 	check(maximum_opening-minimum_opening>.8 and maximum_radius-minimum_radius>22,"visible radial/hinge articulation / phase "+str(phase))
 	check(maximum_stagger>.2 and maximum_lag>.3,"opposite-pair stagger and iris response lag / phase "+str(phase))
-	check(maximum_tip_step<7,"continuous blade-tip path across cycle wrap / phase "+str(phase))
+	check(maximum_tip_step<9,"continuous blade-tip path across cycle wrap / phase "+str(phase))
 	check(emitted>50 and emission_error<.001,"all live births exactly at current articulated tips / phase "+str(phase))
 	check(rest_births==0,"no fresh emissions in rest / phase "+str(phase))
-	check(max_batch<=18 and peak<100,"retained sparse batch and total counts / phase "+str(phase))
+	check(max_batch<=42 and peak<500,"intentional full rings and six-tip pulses remain bounded / phase "+str(phase))
 	check(bank_range>.05 and bank_range<=.121,"bounded visible movement banking / phase "+str(phase))
 func transform_contract():
 	var c = Core.new()
@@ -126,20 +126,20 @@ func timestep_and_interruptions():
 		c.debug_set_boss(3)
 		# Fixture invulnerability allows the identical stationary input to exercise 20s.
 		c.invulnerable=100
-		for frame in rate*20: c.step(1.0/rate,Vector2.ZERO,false,false,false)
+		for frame in rate*30: c.step(1.0/rate,Vector2.ZERO,false,false,false)
 		models.append(c)
 	var reference = models.back()
 	for model in models:
-		check(absf(wrapf(float(model.boss.rotation)-float(reference.boss.rotation),-PI,PI))<.0001,"20s rotor rate invariance")
-		check(model.boss.pos.distance_to(reference.boss.pos)<.001,"20s movement rate invariance")
+		check(absf(wrapf(float(model.boss.rotation)-float(reference.boss.rotation),-PI,PI))<.0001,"30s rotor rate invariance")
+		check(model.boss.pos.distance_to(reference.boss.pos)<.001,"30s movement rate invariance")
 		var tips_match := true
 		for blade in 6:
 			if model.boss_blade_position(blade).distance_to(reference.boss_blade_position(blade))>.001: tips_match=false
-		check(tips_match,"20s articulated pose rate invariance")
+		check(tips_match,"30s articulated pose rate invariance")
 		var bullets_match: bool = model.bullets.size()==reference.bullets.size()
 		for i in mini(model.bullets.size(),reference.bullets.size()):
 			if model.bullets[i].pos.distance_to(reference.bullets[i].pos)>.002: bullets_match=false
-		check(bullets_match,"20s emitted trajectory rate invariance")
+		check(bullets_match,"30s emitted trajectory rate invariance")
 	var saved: Dictionary = reference.boss.duplicate(true)
 	reference.state="ready"
 	reference.step(.1,Vector2.ONE,true,true,true)
@@ -154,7 +154,7 @@ func timestep_and_interruptions():
 	var maximum_speed_step := 0.0
 	var worst_at := 0.0
 	for transition in [Vector2(1,1500),Vector2(2,700)]:
-		for sample in 85:
+		for sample in 145:
 			var c = Core.new()
 			c.debug_set_boss(int(transition.x))
 			c.player=Vector2(720,10000)
@@ -177,8 +177,8 @@ func timestep_and_interruptions():
 						worst_at=sample*.1
 					maximum_step=maxf(maximum_step,tip.distance_to(old[blade]))
 	print("BOSS_INTERRUPTION min_tip_step=",minimum_tip," worst_interrupt_cycle=",worst_at," max_tip_step=",maximum_step," max_speed_step=",maximum_speed_step)
-	check(minimum_tip>0,"all blades remain clockwise through phase interruptions at 85 score positions in both transitions")
-	check(maximum_step<10 and maximum_speed_step<.35,"bounded pose/speed changes through all sampled interruptions")
+	check(minimum_tip>0,"all blades remain clockwise through phase interruptions at 145 score positions in both transitions")
+	check(maximum_step<12 and maximum_speed_step<.14,"bounded pose/speed changes through all sampled interruptions")
 func run():
 	transform_contract()
 	for phase in [1,2,3]: phase_motion(phase)

@@ -285,6 +285,9 @@ func _impact(effect: Dictionary) -> void:
 	var age: float = effect.get("age",0)
 	var life: float = maxf(effect.get("life",.5),.001)
 	var a = clampf(1-age/life,0,1)
+	# At lifetime epsilon the fragments collapse to degenerate triangles.
+	# They are already invisible; omit them instead of sending invalid polygons.
+	if a < .01: return
 	var p: Vector2 = effect.pos
 	var r: float = effect.get("radius",24)*(1+age*3)
 	# Hollow, fading fragments never resemble filled hostile bullet cores.
@@ -387,8 +390,6 @@ func _enemy(e: Dictionary) -> void:
 			var pose := Core.blade_transform(n,float(e.get("rotation",0.0)),blade_opening,bank)
 			draw_set_transform(world+pose.origin,pose.get_rotation())
 			_soft_polygon(Core.boss_blade_polygon(),col)
-			# One interior edge gives the scythe a readable cutting direction, not another contour cloud.
-			_glyph_edge(PackedVector2Array([Vector2(5,-4),Vector2(22,-10),Vector2(47,-11)]),Color(col.lightened(.65),.63),.9,false)
 			# A tiny root facet is part of the energy symbol, not a bolt or a metallic linkage.
 			_soft_polygon(PackedVector2Array([Vector2(-9,-4),Vector2(-4,-8),Vector2(1,-4),Vector2(-4,0)]),Color(col,.72))
 		# The hub rotates at its own reduced ratio instead of being welded to all six blades.

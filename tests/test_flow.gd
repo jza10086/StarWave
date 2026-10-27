@@ -94,7 +94,7 @@ func role_and_phrase_checks():
 		var rest_births:=0
 		var attack_motion:=0.0
 		var previous: Vector2=c.boss.pos
-		for frame in 60*11:
+		for frame in 60*17:
 			c.step(1.0/60,Vector2.ZERO,false,false,false)
 			var phrase: String=c.boss.get("phrase","")
 			phrases[phrase]=true
@@ -103,7 +103,7 @@ func role_and_phrase_checks():
 				for bullet in c.bullets:
 					if bullet.age <= 1.0/60: rest_births+=1
 			previous=c.boss.pos
-		check(phrases.has_all(["reposition","blades","curves","expand","rest"]),"all boss phrases phase "+str(phase))
+		check(phrases.has_all(["reposition","blades","curves","spiral","expand","rest"]),"all boss phrases phase "+str(phase))
 		check(attack_motion<.001,"boss holds position during attacks phase "+str(phase))
 		check(rest_births==0,"boss rest has no fresh emissions phase "+str(phase))
 
@@ -114,7 +114,7 @@ func run():
 	for i in Core.MAX_BULLETS:
 		capped._add_bullet(Vector2(100,100),Vector2.DOWN*170,6,Core.PURPLE)
 	var existing: Array=capped.bullets.duplicate(true)
-	capped._boss_gap_ring(20,0,PI*.5,.74,180,Core.PURPLE,.2)
+	capped._boss_radial_ring(36,0,180,Core.PURPLE,.055)
 	check(capped.bullets.size()==Core.MAX_BULLETS,"capped boss ring cannot overflow")
 	check(capped.bullets==existing,"capped boss ring cannot mutate existing bullet trajectory")
 	# Core's inactive state is the pause contract; UI pause is verified in real renders.

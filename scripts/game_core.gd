@@ -396,9 +396,9 @@ func _spawn_boss() -> void:
 	boss = {"id": _next_id, "type": "boss", "name": "HARBINGER", "pos": Vector2(field_size.x * 0.5, -90.0),
 		"hp": 2400.0, "max_hp": 2400.0, "radius": 58.0, "phase": 1, "phase_time": 0.0,
 		"age": 0.0, "telegraph": 3.0, "timer": 0.4, "aim_timer": 1.6, "flash": 0.0,
-		"pattern_index": 0, "warning_angle": PI * 0.5, "gap_angle": PI * 0.5,
+		"pattern_index": 0, "warning_angle": PI * 0.5,
 		"rotation": 0.0, "rotation_speed": 0.28, "bank": 0.0, "iris_rotation": 0.0, "hub_rotation": 0.0,
-		"blade_openings": PackedFloat32Array([0.04, 0.04, 0.04, 0.04, 0.04, 0.04]), "iris_opening": 0.04, "attack_telegraph": 0.0, "choreography_slot": 0, "cycle_time": 0.0, "pattern_rotation": 0.0}
+		"blade_openings": PackedFloat32Array([0.04, 0.04, 0.04, 0.04, 0.04, 0.04]), "iris_opening": 0.04, "attack_telegraph": 0.0, "choreography_slot": 0, "cycle_time": 0.0, "pattern_rotation": 0.0, "spiral_tick": 0}
 	_next_id += 1
 	last_event = "boss_warning"
 
@@ -428,7 +428,7 @@ func _update_boss(dt: float) -> void:
 	var previous_position: Vector2 = boss["pos"]
 	boss["flash"] = maxf(0.0, float(boss["flash"]) - dt)
 	var time_before: float = boss["cycle_time"]
-	boss["phrase"] = "reposition" if time_before < 1.5 else ("blades" if time_before < 2.6 else ("curves" if time_before < 4.55 else ("expand" if time_before < 6.2 else "rest")))
+	boss["phrase"] = "reposition" if time_before < 1.5 else ("blades" if time_before < 2.6 else ("curves" if time_before < 4.7 else ("spiral" if time_before >= 5.2 and time_before < 9.6 else ("expand" if time_before < 11.0 else "rest"))))
 	if float(boss["telegraph"]) > 0.0:
 		boss["pos"] = Vector2(boss["pos"]).lerp(Vector2(field_size.x * 0.5, 205.0), 1.0 - exp(-2.4 * dt))
 	elif boss.has("move_from") and int(boss["choreography_slot"]) != 0:
@@ -446,6 +446,7 @@ func _update_boss(dt: float) -> void:
 		boss["pattern_index"] = 0
 		boss["choreography_slot"] = 0
 		boss["cycle_time"] = 0.0
+		boss["spiral_tick"] = 0
 		boss["attack_telegraph"] = 0.0
 		score += bullets.size() * 3
 		bullets.clear()
@@ -462,9 +463,9 @@ func _update_boss(dt: float) -> void:
 	boss["cycle_time"] += dt
 	var time: float = boss["cycle_time"]
 	var slot: int = boss["choreography_slot"]
-	# A single score orders reposition, alternating locked blades, opening curves,
-	# slow obstacles, expansion and rest. Internal locks have no visible overlays.
-	var beats := [0.0, 1.6, 2.05, 2.6, 3.25, 3.9, 4.55, 8.4]
+	# A single score orders reposition, locked needles, full-angle blooms,
+	# rapid spiral, expansion and rest. Internal locks have no visible overlays.
+	var beats := [0.0, 1.6, 2.05, 2.6, 3.25, 3.9, 4.55, 14.4]
 	if time >= beats[slot]:
 		match slot:
 			0:
@@ -476,29 +477,31 @@ func _update_boss(dt: float) -> void:
 				boss["attack_telegraph"] = 1.6
 			1, 2:
 				if player.distance_to(pos) >= 150.0:
-					_boss_fan(1 if slot == 1 else 4, float(boss["warning_angle"]), 3, 0.17, 290.0, GOLD, 3.5, "needle", 0.0)
+					_boss_fan(1 if slot == 1 else 4, float(boss["warning_angle"]), 5, 0.13, 290.0, GOLD, 3.5, "needle", 0.0)
 			3:
-				boss["gap_angle"] = clampf((player - pos).angle(), 0.45, PI - 0.45)
 				boss["pattern_rotation"] = boss["rotation"]
 				boss["attack_telegraph"] = 0.65
-			4, 5:
-				# Opposing arcs open away from the locked lane, never curl back across it.
-				var offset: float = float(boss["pattern_rotation"]) + (slot - 4) * 0.12
-				_boss_gap_ring(16 + phase * 2, offset, float(boss["gap_angle"]), 0.74, 170.0 + phase * 5.0, PINK if phase == 1 else PURPLE, 0.20)
+			4, 5, 6:
+				# Complete 360-degree blooms. Safety comes from inter-bullet spacing,
+				# not a player-centered angular deletion that erases the entire lower fan.
+				var count := 24 + phase * 6
+				var offset: float = float(boss["pattern_rotation"]) + (slot - 4) * TAU / count * .38
+				_boss_radial_ring(count, offset, 175.0 + phase * 8.0, PINK if slot != 5 else GOLD, .055 if slot != 5 else -.055)
 				boss["pattern_index"] += 1
-			6:
-				for side in [-1, 1]:
-					_boss_fan(2 if side < 0 else 3, PI * 0.5 + side * 0.62, 2, 0.26, 95.0, GOLD, 10.0, "crescent", side * 0.16)
-				# Rare delayed acceleration, straight and only with a long safe lead-in.
-				if phase >= 2:
-					for blade in [1, 4]:
-						var origin := boss_blade_position(blade)
-						if origin.distance_to(player) > 420.0:
-							_add_accelerating_bullet(origin, Vector2.from_angle(float(boss["warning_angle"])), 110.0, 280.0)
 			7:
 				boss["cycle_time"] = 0.0
+				boss["spiral_tick"] = 0
 				boss["choreography_slot"] = -1
 		boss["choreography_slot"] += 1
+
+	# Six interleaved corkscrew arms from the real moving tips. Integer score ticks
+	# avoid render-rate drift. Four .70s emission phrases have .20s breathing space each:
+	# the empty annuli travel outwards with the barrage, providing repeatable routes.
+	while time < 9.6 and int(boss["spiral_tick"]) < 90 and time + .000001 >= 6.0 + int(boss["spiral_tick"]) * .04:
+		var tick: int = boss["spiral_tick"]
+		if fmod(tick * .04 + .000001, .9) < .70:
+			_boss_spiral_volley(phase, int(tick * .04 / .9))
+		boss["spiral_tick"] += 1
 
 	if invulnerable <= 0.0 and pos.distance_squared_to(player) < 55.0 * 55.0:
 		_hit_player()
@@ -519,7 +522,8 @@ static func boss_opening_at(time: float) -> float:
 	return _boss_pose_key(time, [Vector2(0,.04), Vector2(.65,.04), Vector2(1.12,.04),
 		Vector2(1.64,.90), Vector2(2.08,1.0), Vector2(2.60,.28), Vector2(2.88,.24),
 		Vector2(3.30,1.0), Vector2(3.66,.76), Vector2(3.98,1.0), Vector2(4.55,.88),
-		Vector2(5.40,.10), Vector2(6.20,.04), Vector2(7.70,.04), Vector2(8.4,.04)])
+		Vector2(5.05,.12), Vector2(5.45,.12), Vector2(5.95,1.0), Vector2(9.60,1.0),
+		Vector2(10.65,.04), Vector2(11.0,.04), Vector2(14.4,.04)])
 
 func _update_boss_animation(dt: float, previous_position: Vector2) -> void:
 	var time: float = boss["cycle_time"]
@@ -528,10 +532,13 @@ func _update_boss_animation(dt: float, previous_position: Vector2) -> void:
 	var target_speed := .38 if entering else _boss_pose_key(time, [Vector2(0,.45), Vector2(.65,.45),
 		Vector2(.85,.60), Vector2(1.30,2.8), Vector2(1.87,2.25), Vector2(2.12,3.05),
 		Vector2(2.60,.70), Vector2(2.86,.70), Vector2(3.23,3.50), Vector2(3.65,2.65),
-		Vector2(3.98,3.75), Vector2(4.45,2.85), Vector2(4.85,1.55), Vector2(5.50,.44),
-		Vector2(6.20,.28), Vector2(7.50,.28), Vector2(8.4,.45)]) * intensity
+		Vector2(3.98,3.75), Vector2(4.55,3.5), Vector2(5.0,1.5), Vector2(5.25,1.5),
+		Vector2(5.92,6.2), Vector2(9.60,6.2), Vector2(10.65,.38), Vector2(11.0,.28),
+		Vector2(13.8,.28), Vector2(14.4,.45)]) * intensity
 	var previous_speed: float = boss["rotation_speed"]
-	boss["rotation_speed"] = lerpf(previous_speed, target_speed, 1.0 - exp(-9.0 * dt))
+	var eased_speed := lerpf(previous_speed, target_speed, 1.0 - exp(-9.0 * dt))
+	# A phase clear can interrupt peak spin; decelerate rather than snapping the rotor.
+	boss["rotation_speed"] = move_toward(previous_speed, eased_speed, 16.0 * dt)
 	boss["rotation"] = wrapf(float(boss["rotation"]) + (previous_speed + float(boss["rotation_speed"])) * .5 * dt, -PI, PI)
 	var velocity := (Vector2(boss["pos"]) - previous_position) / maxf(dt, .000001)
 	boss["bank"] = lerpf(float(boss["bank"]), clampf(-velocity.x / 1100.0, -.08, .08), 1.0 - exp(-2.0 * dt))
@@ -578,16 +585,41 @@ func _boss_fan(blade: int, angle: float, count: int, spacing: float, speed: floa
 	for i in range(count):
 		_add_bullet(origin, Vector2.from_angle(angle + (i - (count - 1) * 0.5) * spacing) * speed, radius, color, kind, curve)
 
-func _boss_gap_ring(count: int, offset: float, gap: float, half_gap: float, speed: float, color: Color, curve: float) -> void:
-	for i in range(count):
-		var angle: float = offset + TAU * float(i) / count
-		if absf(wrapf(angle - gap, -PI, PI)) > half_gap:
-			var blade: int = posmod(int(round((angle - float(boss["rotation"]) + PI * 0.5) / (TAU / 6.0))), 6)
-			var origin := boss_blade_position(blade)
-			if origin.distance_to(player) >= 140.0 and bullets.size() < MAX_BULLETS:
-				var opening: float = signf(wrapf(angle - gap, -PI, PI)) * absf(curve)
-				_add_bullet(origin, Vector2.from_angle(angle) * speed, 6.0, color, "orb", opening)
-				bullets.back()["curve_duration"] = 2.2
+## Preserve a complete pattern near the player: suppress the WHOLE volley rather
+## than deleting individual nearby/lower tips. No angular fairness filter.
+func _boss_volley_clearance() -> bool:
+	for blade in 6:
+		if boss_blade_position(blade).distance_to(player) < 140.0:
+			return false
+	return true
+
+func _boss_radial_ring(count: int, offset: float, speed: float, color: Color, curve: float = 0.0) -> void:
+	if not _boss_volley_clearance() or bullets.size() + count > MAX_BULLETS:
+		return
+	for i in count:
+		var angle := offset + TAU * float(i) / count
+		var blade := 0
+		var best := INF
+		for candidate in 6:
+			var radial := (boss_blade_position(candidate) - Vector2(boss["pos"])).angle()
+			var error := absf(wrapf(angle - radial, -PI, PI))
+			if error < best:
+				best = error
+				blade = candidate
+		_add_bullet(boss_blade_position(blade), Vector2.from_angle(angle) * speed, 5.5, color, "orb", curve)
+		bullets.back()["curve_duration"] = 2.2
+		bullets.back()["pattern"] = "radial"
+
+func _boss_spiral_volley(phase: int, pulse: int) -> void:
+	if not _boss_volley_clearance() or bullets.size() + 6 > MAX_BULLETS:
+		return
+	for blade in 6:
+		var origin := boss_blade_position(blade)
+		var heading := (origin - Vector2(boss["pos"])).normalized()
+		_add_bullet(origin, heading * (200.0 + phase * 10.0), 4.5, PINK if blade % 2 == 0 else PURPLE, "orb", .16)
+		bullets.back()["curve_duration"] = 3.0
+		bullets.back()["pattern"] = "spiral"
+		bullets.back()["pulse"] = pulse
 
 func _fire_player() -> void:
 	var spread: float = 0.0 if focused else 0.11
