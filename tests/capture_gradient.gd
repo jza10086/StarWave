@@ -42,6 +42,22 @@ func run():
 	advance(540)
 	check(app.core.focused,"precise focus")
 	await snap("03-gradient-boss")
+	var orb_textures := 0
+	for cache_key in app.shape_cache:
+		if not str(cache_key).begins_with("orb"): continue
+		orb_textures += 1
+		var orb: Image = app.shape_cache[cache_key].get_image()
+		check(orb.get_size() == Vector2i(256,256), "high resolution orb texture")
+		check(orb.has_mipmaps(), "orb minification mipmaps")
+		check(orb.get_pixel(0,128).a == 0 and orb.get_pixel(128,0).a == 0, "transparent orb margins")
+		check(orb.get_pixel(128,128).a > .99 and orb.get_pixel(12,128).a > .99, "solid orb interior reaches collision radius")
+		var edge_alpha := false
+		for x in range(6,12):
+			for y in range(110,145):
+				var a := orb.get_pixel(x,y).a
+				edge_alpha = edge_alpha or (a > 0.0 and a < 1.0)
+		check(edge_alpha, "orb boundary has antialiased coverage")
+	check(orb_textures > 0, "real render created orb texture cache")
 	key(KEY_P)
 	check(app.paused,"pause P")
 	await snap("04-pause")
@@ -96,6 +112,8 @@ func run():
 		await process_frame
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(frames.path_join("frame-%04d.png"%frame))
+	check(app.shape_cache.size() < 100, "shape texture cache remains bounded after movement / resizing")
+	print("SOFT_TEXTURE_CACHE entries=",app.shape_cache.size())
 	print("GRADIENT_CAPTURE ",checks," checks, ",failed," failures; 84 motion frames / 12 fps; lives=",app.core.lives)
 	app.queue_free()
 	await process_frame

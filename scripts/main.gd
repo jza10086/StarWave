@@ -4,8 +4,8 @@ const Core = preload("res://scripts/game_core.gd")
 const FONT = preload("res://assets/fonts/NotoSansSC-Regular.otf")
 const ORIGIN = Vector2.ZERO
 var FIELD := Vector2(1440, 960)
-const CYAN = Color("42fff0")
-const GOLD = Color("ffe66b")
+const CYAN = Color("62ebda")
+const GOLD = Color("f4d88f")
 const INK = Color("050718")
 var core = Core.new()
 var paused := false
@@ -19,6 +19,7 @@ var last_score := 0
 var sounds: Dictionary = {}
 var audio: AudioStreamPlayer
 var pointer_active := false
+var shape_cache: Dictionary = {}
 var aura: ImageTexture
 var beam: ImageTexture
 var energy_ring: ImageTexture
@@ -43,7 +44,7 @@ func _setup_lighting() -> void:
 	aura = _make_light_texture(0)
 	beam = _make_light_texture(1)
 	energy_ring = _make_light_texture(2)
-	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	space_canvas = ColorRect.new()
 	space_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	space_canvas.z_index = -2
@@ -64,18 +65,18 @@ func _aura_at(p: Vector2, radius: Vector2, col: Color) -> void:
 
 func _light_pass() -> void:
 	for e in core.enemies:
-		var col = Color("ffad52") if e.type=="gunner" else Color("bb7aff") if e.type=="weaver" else Color("ff527f")
-		_aura_at(e.pos,Vector2.ONE*e.radius*3.4,Color(col,.24))
+		var col = Color("e9bf8f") if e.type=="gunner" else Color("b7a3df") if e.type=="weaver" else Color("df96ad")
+		_aura_at(e.pos,Vector2.ONE*e.radius*3.4,Color(col,.12))
 	if not core.boss.is_empty():
 		var p: Vector2 = core.boss.pos
-		_aura_at(p,Vector2(220,160),Color(.55,.22,1,.36))
-		for side in [-1,1]: _aura_at(p+Vector2(side*94,7),Vector2(65,65),Color(.8,.2,.6,.24))
+		_aura_at(p,Vector2(220,160),Color(.62,.53,.8,.16))
+		for side in [-1,1]: _aura_at(p+Vector2(side*94,7),Vector2(65,65),Color(.8,.55,.65,.12))
 	for shot in core.shots: _aura_at(shot.pos,Vector2(13,30),Color(CYAN,.27))
 	for b in core.bullets:
 		var original: Color = b.get("color",Color("ff70c8"))
-		var col = Color("ff527f") if original.r>original.b else Color("c384ff")
-		if original.g>.65 and original.r>.8: col=Color("ffab52")
-		_aura_at(b.pos,Vector2.ONE*b.get("radius",6)*3.4,Color(col,.3))
+		var col = Color("df96ad") if original.r>original.b else Color("c0ace7")
+		if original.g>.65 and original.r>.8: col=Color("f2c58e")
+		_aura_at(b.pos,Vector2.ONE*b.get("radius",6)*3.4,Color(col,.09))
 	for pick in core.pickups: _aura_at(pick.pos,Vector2(42,42),Color(GOLD,.24))
 	if core.state!="lost":
 		_aura_at(core.player,Vector2(65,65),Color(CYAN,.18))
@@ -189,18 +190,45 @@ func _poly(p: Vector2, radius: float, sides: int, angle: float = 0.0) -> PackedV
 	for i in range(sides): pts.append(p + Vector2.from_angle(angle + TAU*i/sides)*radius)
 	return pts
 
-func _neon_polygon(pts: PackedVector2Array, color: Color, fill: Color, width: float = 2.0) -> void:
-	var colors = PackedColorArray()
-	var min_y = pts[0].y
-	var max_y = min_y
+# Filled vector artwork rasterized at 4x and linearly sampled. No contour strokes.
+# Keys are local geometry + palette only: movement never allocates textures.
+func _bleed_transparent_rgb(img: Image, col: Color) -> void:
+	# Transparent black leaks into RGB mip averages unless the entire padding is filled.
+	for y in img.get_height():
+		var edge_color = col.lightened(.15).lerp(col.darkened(.18),float(y)/img.get_height())
+		for x in img.get_width():
+			if img.get_pixel(x,y).a == 0.0:
+				img.set_pixel(x,y,Color(edge_color,0))
+
+func _soft_polygon(pts: PackedVector2Array, col: Color) -> void:
+	var bounds = Rect2(pts[0],Vector2.ZERO)
+	for pt in pts: bounds = bounds.expand(pt)
+	var points := ""
 	for pt in pts:
-		min_y = minf(min_y,pt.y)
-		max_y = maxf(max_y,pt.y)
-	for pt in pts:
-		var t = (pt.y-min_y)/maxf(1,max_y-min_y)
-		colors.append(fill.lerp(Color(color,fill.a),.58*(1.0-t)+.14))
-	draw_polygon(pts,colors)
-	for i in range(pts.size()): _neon_line(pts[i],pts[(i+1)%pts.size()],Color(color,color.a*.85),width)
+		var local = pt-bounds.position+Vector2.ONE*2
+		points += "%.2f,%.2f " % [local.x,local.y]
+	var key = points+col.to_html(false)
+	if not shape_cache.has(key):
+		var size = bounds.size+Vector2.ONE*4
+		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"><defs><linearGradient id="v" x1="0" y1="0" x2="0.65" y2="1"><stop stop-color="#%s"/><stop offset="0.48" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></linearGradient></defs><polygon points="%s" fill="url(#v)"/></svg>' % [size.x,size.y,col.lightened(.32).to_html(false),col.to_html(false),col.darkened(.30).to_html(false),points]
+		var img = Image.new()
+		img.load_svg_from_string(svg,4.0)
+		_bleed_transparent_rgb(img,col)
+		img.generate_mipmaps()
+		shape_cache[key] = ImageTexture.create_from_image(img)
+	draw_texture_rect(shape_cache[key],Rect2(bounds.position-Vector2.ONE*2,bounds.size+Vector2.ONE*4),false,Color(1,1,1,col.a))
+
+func _soft_orb(p: Vector2, r: float, col: Color) -> void:
+	var key = "orb"+col.to_html(false)
+	if not shape_cache.has(key):
+		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><defs><radialGradient id="v" cx="38%%" cy="28%%" r="80%%"><stop stop-color="#%s"/><stop offset="0.52" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#v)"/></svg>' % [col.lightened(.5).to_html(false),col.to_html(false),col.darkened(.18).to_html(false)]
+		var img = Image.new()
+		img.load_svg_from_string(svg,4.0)
+		_bleed_transparent_rgb(img,col)
+		img.generate_mipmaps()
+		shape_cache[key] = ImageTexture.create_from_image(img)
+	var extent = r*32.0/30.0
+	draw_texture_rect(shape_cache[key],Rect2(p-Vector2.ONE*extent,Vector2.ONE*extent*2),false,Color(1,1,1,col.a))
 
 func _neon_ring(p: Vector2, radius: float, color: Color, width: float = 1.5, start: float = 0, end: float = TAU) -> void:
 	# Annular Gaussian is used for full energy rings; arcs remain fine, clean cores.
@@ -211,19 +239,10 @@ func _neon_ring(p: Vector2, radius: float, color: Color, width: float = 1.5, sta
 
 func _space() -> void:
 	var t = visual_time if motion else 0.0
-	for i in range(int(FIELD.x*FIELD.y/7300)):
-		var pos = Vector2(fmod(i*137.71,FIELD.x-14)+7,fmod(i*73.31+t*(8+i%4*5),FIELD.y-4)+2)
-		var alpha = .12+float(i%4)*.055
-		draw_circle(pos,.65+float(i%3)*.3,Color(.52,.66,1,alpha))
-		if i%17 == 0: draw_line(pos-Vector2(0,3),pos+Vector2(0,3),Color(.5,.7,1,.15),1)
-	# Distant orbit fragments are thin, dim and much larger than projectiles.
-	for i in range(3):
-		var pos = Vector2(FIELD.x*(.18+.33*i),FIELD.y*(.22+.29*i))
-		draw_arc(pos,150+i*65,t*.012+i,t*.012+i+PI*.85,72,Color(.24,.28,.55,.12),1,true)
-	for i in range(9):
-		var pos = Vector2(fmod(i*271.3+50,FIELD.x),fmod(i*191.7+t*12,FIELD.y))
-		var pts = _poly(pos,18+i%3*9,3,t*.025+i)
-		draw_polyline(pts+PackedVector2Array([pts[0]]),Color(.35,.27,.65,.10),1,true)
+	# Small continuous light discs, never single-pixel squares or wire fragments.
+	for i in range(int(FIELD.x*FIELD.y/14000)):
+		var pos = Vector2(fmod(i*137.71,FIELD.x-14)+7,fmod(i*73.31+t*(5+i%4*3),FIELD.y-4)+2)
+		draw_texture_rect(aura,Rect2(pos-Vector2.ONE*2.5,Vector2.ONE*5),false,Color(.68,.73,.88,.22+float(i%3)*.08))
 
 func _field() -> void:
 	_space()
@@ -231,15 +250,16 @@ func _field() -> void:
 		var p: Vector2 = shot.pos
 		if not Rect2(Vector2(5,0),FIELD-Vector2(10,0)).has_point(p): continue
 		_trail(p+Vector2(0,4),Vector2.DOWN,52,4,Color(CYAN,.42))
-		_neon_line(p+Vector2(0,8),p-Vector2(0,14),CYAN,2.5)
-		draw_line(p+Vector2(0,3),p-Vector2(0,13),Color("e2fffc"),1,true)
+		# A filled antialiased capsule, not parallel bright contour strokes.
+		draw_line(p+Vector2(0,6),p-Vector2(0,12),Color("a2ddd7"),3.0,true)
+		_soft_orb(p+Vector2(0,6),1.5,Color("a2ddd7"))
+		_soft_orb(p-Vector2(0,12),1.5,Color("a2ddd7"))
 	for e in core.enemies: _enemy(e)
 	if not core.boss.is_empty(): _enemy(core.boss)
 	for pick in core.pickups:
 		var p: Vector2 = pick.pos
-		_neon_ring(p,21,Color(GOLD,.35),1,visual_time,visual_time+PI*1.6)
-		_neon_polygon(_poly(p,14,4,-PI/2),GOLD,Color("302b14"))
-		_center(p+Vector2(0,5),"P" if pick.get("type","power")=="power" else "B",14,GOLD)
+		_soft_polygon(_poly(p,17,4,-PI/2),GOLD)
+		_center(p+Vector2(0,5),"P" if pick.get("type","power")=="power" else "B",14,Color("483d29"))
 	for effect in core.effects: _impact(effect)
 	for b in core.bullets: _bullet(b)
 	_player()
@@ -280,22 +300,10 @@ func _bullet(b: Dictionary) -> void:
 	if not Rect2(Vector2(8,8),FIELD-Vector2(16,16)).has_point(p): return
 	var r: float = b.get("radius",6)
 	var original: Color = b.get("color",Color("ff70c8"))
-	# Hostile palette exclusively warm / violet; friendly shots always cyan.
-	var col = Color("ff527f") if original.r>original.b else Color("c384ff")
-	if original.g>.65 and original.r>.8: col=Color("ffab52")
-	var dir: Vector2 = b.get("vel",Vector2.DOWN).normalized()
-	draw_texture_rect(aura,Rect2(p-Vector2.ONE*r*2,Vector2.ONE*r*4),false,Color(col,.22))
-	draw_circle(p,r+2,Color("050718"))
-	if b.get("kind","orb")=="needle":
-		draw_circle(p,r,col) # Preserve the complete circular collision boundary.
-		var side = dir.orthogonal()
-		var pts = PackedVector2Array([p+dir*r*1.3,p+side*r*.65,p-dir*r*1.3,p-side*r*.65])
-		draw_colored_polygon(pts,col)
-		draw_line(p-dir*r*.6,p+dir*r*.6,Color("fff0ee"),1.5,true)
-	else:
-		draw_circle(p,r,col)
-		draw_texture_rect(aura,Rect2(p-Vector2.ONE*r,Vector2.ONE*r*2),false,Color("fff4e9"))
-		draw_circle(p,r*.28,Color("fff5ef"))
+	var col = Color("ed9eac") if original.r>original.b else Color("c0ace7")
+	if original.g>.65 and original.r>.8: col=Color("f2c58e")
+	# Solid circular body equals collision radius; no black border or luminous rim.
+	_soft_orb(p,r,col)
 
 func _diamond(p: Vector2, radius: float, color: Color) -> void:
 	draw_colored_polygon(_poly(p,radius,4,-PI/2),color)
@@ -305,42 +313,30 @@ func _enemy(e: Dictionary) -> void:
 	if not Rect2(Vector2(-150,-150),FIELD+Vector2(300,300)).has_point(p): return
 	var kind: String = e.get("type","scout")
 	var r: float = e.get("radius",19)
-	var col = Color("ffad52") if kind=="gunner" else Color("bb7aff") if kind=="weaver" else Color("ff527f")
-	var fill = Color("1c112e")
-	if float(e.get("flash",0))>0: fill=Color("ffe8f6")
+	var col = Color("e9bf8f") if kind=="gunner" else Color("b7a3df") if kind=="weaver" else Color("df96ad")
+	if float(e.get("flash",0))>0: col=Color("f3dce7")
 	if float(e.get("telegraph",0))>0:
-		_neon_ring(p,r+22,Color(col,.55),1.3,visual_time*2,visual_time*2+PI*1.75)
-		draw_line(p+Vector2(0,r+6),p+Vector2(0,minf(160,FIELD.y-p.y-r)),Color(col,.12),2,true)
+		_trail(p+Vector2(0,r),Vector2.DOWN,110,8,Color(col,.12))
 	if kind=="boss":
-		col=Color("c780ff")
-		var phase: int = e.get("phase",1)
-		_neon_ring(p,r+22,Color(col,.35),1,visual_time*.3,visual_time*.3+TAU*.82)
-		_neon_polygon(_poly(p,r,6,PI/6),col,fill,2.5)
-		_neon_polygon(_poly(p,r*.73,6,-PI/6),Color(col,.65),Color("25133e"),1)
+		col=Color("b4a0d5") if float(e.get("flash",0))<=0 else Color("f3dce7")
+		_soft_polygon(_poly(p,r,6,PI/6),col)
 		for side in [-1,1]:
-			var wing=p+Vector2(side*(r+36),7)
-			_neon_line(p+Vector2(side*r*.8,0),wing,Color(col,.7),3)
-			var pts=PackedVector2Array([wing+Vector2(-23,-27),wing+Vector2(23,-27),wing+Vector2(31,15),wing+Vector2(0,33),wing+Vector2(-31,15)])
-			_neon_polygon(pts,col,Color("20112f"))
-			_neon_polygon(_poly(wing,13,4,PI/4),Color("ff719f"),Color("542046"),1.5)
-			_neon_line(wing+Vector2(-13,-39),wing+Vector2(13,-39),Color(col,.65),2)
-		_neon_ring(p,r*.42,Color("ff719f"),2,-visual_time,-visual_time+PI*1.7)
-		_neon_polygon(_poly(p,12+phase*2,3,PI/2),Color("ffe8ff"),Color("a44ad0"),2)
+			var wing = p+Vector2(side*(r+36),7)
+			_soft_polygon(PackedVector2Array([p+Vector2(side*40,-8),wing+Vector2(0,-10),wing+Vector2(0,10),p+Vector2(side*40,10)]),col.darkened(.2))
+			_soft_polygon(PackedVector2Array([wing+Vector2(-23,-27),wing+Vector2(23,-27),wing+Vector2(31,15),wing+Vector2(0,33),wing+Vector2(-31,15)]),col)
+			_soft_orb(wing,9,Color("eab3c5"))
+			_trail(wing+Vector2(0,-25),Vector2.UP,30,9,Color(col,.28))
+		_soft_orb(p,17,Color("ead4e5"))
 	elif kind=="gunner":
-		_neon_polygon(_poly(p,r*1.2,6,PI/6),col,fill)
-		_neon_ring(p,r*.65,Color(col,.8),1)
-		_neon_line(p+Vector2(-6,2),p+Vector2(-6,r*1.3),col,3)
-		_neon_line(p+Vector2(6,2),p+Vector2(6,r*1.3),col,3)
+		_soft_polygon(_poly(p,r*1.2,6,PI/6),col)
+		for side in [-1,1]:
+			_soft_polygon(PackedVector2Array([p+Vector2(side*6-3,0),p+Vector2(side*6+3,0),p+Vector2(side*6+3,r*1.3),p+Vector2(side*6-3,r*1.3)]),col.darkened(.12))
+		_soft_orb(p,5,Color("f6e0bd"))
 	elif kind=="weaver":
-		_neon_polygon(_poly(p,r*1.3,4,0),col,fill)
-		_neon_polygon(_poly(p,r*.73,4,0),Color(col,.7),Color("301846"),1)
-		for side in [-1,1]: _neon_line(p+Vector2(side*r*1.5,-r*.5),p+Vector2(side*r*1.5,r*.5),Color(col,.5),1)
+		_soft_polygon(_poly(p,r*1.3,4,0),col)
+		_soft_orb(p,5,Color("e6d9f5"))
 	else:
-		var pts=PackedVector2Array([p+Vector2(-r,-r*.6),p+Vector2(0,r*1.3),p+Vector2(r,-r*.6),p+Vector2(0,-r*.2)])
-		_neon_polygon(pts,col,fill)
-		_neon_line(p+Vector2(-r*.5,-r*.3),p+Vector2(0,r*.65),Color(col,.55),1)
-		_neon_line(p+Vector2(r*.5,-r*.3),p+Vector2(0,r*.65),Color(col,.55),1)
-	if kind!="boss": _diamond(p,4,Color("ffe6f4"))
+		_soft_polygon(PackedVector2Array([p+Vector2(-r,-r*.6),p+Vector2(0,r*1.3),p+Vector2(r,-r*.6),p+Vector2(0,-r*.2)]),col)
 
 func _player() -> void:
 	var p: Vector2 = core.player
@@ -348,21 +344,11 @@ func _player() -> void:
 	var alpha = .45 if core.invulnerable>0 and sin(visual_time*25)>0 else 1.0
 	var flame = 45+10*sin(visual_time*31)
 	for side in [-1,1]:
-		var q=p+Vector2(side*13,12)
-		_trail(q,Vector2.DOWN,flame*1.6,7,Color(CYAN,alpha*.65))
-		_neon_line(q,q+Vector2(0,17),Color(CYAN,alpha*.6),2)
+		_trail(p+Vector2(side*13,12),Vector2.DOWN,flame,6,Color(CYAN,alpha*.40))
 	var pts=PackedVector2Array([p+Vector2(0,-27),p+Vector2(10,-3),p+Vector2(26,17),p+Vector2(9,11),p+Vector2(0,17),p+Vector2(-9,11),p+Vector2(-26,17),p+Vector2(-10,-3)])
-	_neon_polygon(pts,Color(CYAN,alpha),Color(.035,.19,.23,alpha),2)
-	_neon_line(p+Vector2(0,-20),p+Vector2(0,12),Color("dcfffc"),1.5)
-	for side in [-1,1]:
-		_neon_line(p+Vector2(side*8,1),p+Vector2(side*18,11),Color(CYAN,alpha*.65),1)
-	if core.focused:
-		_neon_ring(p,36,Color(CYAN,.22),1,-visual_time*.6,-visual_time*.6+PI*.65)
-		_neon_ring(p,36,Color(CYAN,.22),1,PI-visual_time*.6,PI-visual_time*.6+PI*.65)
-		draw_circle(p,7,INK)
-		draw_circle(p,4,Color.WHITE)
-		draw_arc(p,7,0,TAU,24,CYAN,1.3,true)
-	if core.invulnerable>0: _neon_ring(p,32,Color(CYAN,.45),1.5)
+	_soft_polygon(pts,Color("8bd5d2")*Color(1,1,1,alpha))
+	_soft_polygon(PackedVector2Array([p+Vector2(0,-17),p+Vector2(4,-2),p+Vector2(0,6),p+Vector2(-4,-2)]),Color("507e9a")*Color(1,1,1,alpha))
+	if core.focused: _soft_orb(p,4,Color("ffffff"))
 
 func _hud() -> void:
 	# Small translucent edge overlays; the playfield continues behind them.
@@ -388,8 +374,6 @@ func _hud_style() -> StyleBoxFlat:
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.045, 0.09, 0.72)
 	style.set_corner_radius_all(3)
-	style.border_color = Color(CYAN, .18)
-	style.border_width_bottom = 1
 	return style
 
 func _overlay() -> void:
@@ -405,11 +389,8 @@ func _overlay() -> void:
 		title = "防线守住了"; sub = "M I S S I O N   C L E A R"; body = "最终得分  %08d" % core.score; action = "再次出击  /  ENTER"
 	elif core.state == "lost":
 		title = "信号中断"; sub = "S I G N A L   L O S T"; body = "最终得分  %08d  ·  再试一次。" % core.score; action = "重新出击  /  ENTER"
-	_neon_ring(Vector2(720,260),68,Color(CYAN,.4),1,visual_time*.25,visual_time*.25+PI*1.6)
-	_neon_polygon(_poly(Vector2(720,260),48,6,PI/6),CYAN,INK)
-	_diamond(Vector2(720,260),42,CYAN)
-	_diamond(Vector2(720,260),32,INK)
-	_diamond(Vector2(720,260),12,GOLD)
+	_soft_polygon(_poly(Vector2(720,260),48,6,PI/6),Color("8bd5d2"))
+	_soft_orb(Vector2(720,260),12,GOLD)
 	_center(Vector2(720,375),title,53,Color("f3f2df"))
 	_center(Vector2(720,420),sub,20,CYAN)
 	_center(Vector2(720,490),body,19,Color("b9ccdf"))

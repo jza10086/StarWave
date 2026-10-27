@@ -14,7 +14,7 @@ func run():
 	await process_frame
 	app.set_process(false)
 	app.muted = true
-	check(app.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR,"linear light sampling")
+	check(app.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS,"linear light sampling")
 	check(app.light_canvas.material.blend_mode == CanvasItemMaterial.BLEND_MODE_ADD,"additive bounded aura")
 	check(app.light_canvas.z_index < 0,"auras behind crisp geometry")
 	check(app.space_canvas.z_index < app.light_canvas.z_index,"background behind emission")
