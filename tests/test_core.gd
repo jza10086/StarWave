@@ -47,10 +47,13 @@ func _run() -> void:
 		c.bullets.append({"pos": c.player, "vel": Vector2.ZERO, "radius": 6.0})
 	c.step(0.1, Vector2.ZERO, false, false, false)
 	check(c.lives == 2 and c.invulnerable > 2.8 and c.bullets.is_empty(), "one hit per frame with safe respawn")
+	# Let the finite hit-wave finish before testing a separate fresh impact.
+	tick(c, 0.7)
 	c.invulnerable = 0.0
 	c.bullets.append({"pos": c.player + Vector2(0.0, -300.0), "vel": Vector2(0.0, 72000.0), "radius": 6.0})
 	c.step(1.0 / 60.0, Vector2.ZERO, false, false, false)
 	check(c.lives == 1, "swept collision catches fast bullet")
+	tick(c, 0.7)
 	c.invulnerable = 0.0
 	c.bullets.append({"pos": c.player, "vel": Vector2.ZERO, "radius": 6.0})
 	c.step(0.1, Vector2.ZERO, false, false, false)

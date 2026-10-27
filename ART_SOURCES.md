@@ -52,3 +52,12 @@
 - Nova Drift 官方开发日志与 Station Omega 截图：https://blog.novadrift.io/nova-drift-2021-upcoming-content/ 。参考分段发光环、中央负空间与外绕弧弹的视觉分离。
 
 六把二次曲线镰刀、三组 75 ms 错相铰接、220 ms 延迟虹膜、同向差速内核及 8.4 秒收展 / 加速编排均为本工程原创设计与实现，以上时序不是对参考作品机制的描述。保留本作获批的透明二维能量符号，不复制参考图像、外形组合、音乐或关卡；参考图片不随源码分发。
+
+## 受击扩散消弹 / 逐弹消散（2026-10-27）
+
+本次先查看以下官方演示及作者动图的实际画面，再设计实现：
+- **Danmaku Unlimited 3** 官方商店：https://store.steampowered.com/app/450950/Danmaku_Unlimited_3/ 。官方文本描述危险敌弹可转成无害 ghost bullets；演示可观察到扩散亮环和金色几何转化。借鉴“危险态与消除态用颜色、形态明确区分”，不推断画面中所有青色物体都是 ghost。
+- **Crimzon Clover World EXplosion** 官方商店：https://store.steampowered.com/app/1718160/Crimzon_Clover_World_EXplosion/ 。Arrange 演示可见自机附近亮核、向外扩散的环与逐物体金色反馈。借鉴“从自机受击点启动、沿波前逐弹反馈”，不移植原作的奖励系统、全屏闪白、大字或密集奖励光点。
+- **Distortion / Shockwave**，作者 mrsir8433：https://godotshaders.com/shader/distortion/ 。查看作者动图及 radius / center / width / feather 分离的示例，参考透明内部、窄环带、外部驱动半径的组织方式。未复制其 Shader 代码，也不加入全屏折射以免扰乱真实弹位。
+
+本工程用原创 CanvasItem 几何绘制窄青色柔边护盾；半径直接读取核心仿真的同一函数。弹体在扫交瞬间移出危险数组，原色向浅青色转化、收缩亮点、两段短弧及三粒短碎光在 0.20 秒内消散，不保留危险拖尾。0.58 秒护盾时长、0.20 秒消散时长及 384 项回收池是本项目调参，不是参考作品的实测参数。没有复制参考图像、角色、特效资产、代码、音频或界面，参考画面不随源码分发。

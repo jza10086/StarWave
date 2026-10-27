@@ -1,0 +1,20 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+WARNING: Could not set V-Sync mode, as changing V-Sync mode is not supported by the graphics driver.
+     at: set_use_vsync (platform/linuxbsd/x11/gl_manager_x11.cpp:372)
+OpenGL API 4.5 (Core Profile) Mesa 25.0.7-2+deb13u1 - Compatibility - Using Device: Mesa - llvmpipe (LLVM 19.1.7, 256 bits)
+
+ACTUAL_HIT t=10.1666666666667 origin=(463.3275, 926.0) still_dangerous=277 lives=2
+WAVE frame=143 age=0.03333333333333 radius=28.3233189778113 hazards=280 dissolves=1
+WAVE frame=144 age=0.08333333333333 radius=98.1708983755846 hazards=284 dissolves=4
+WAVE frame=145 age=0.13333333333333 radius=215.781896038012 hazards=277 dissolves=14
+WAVE frame=146 age=0.18333333333333 radius=369.600646255902 hazards=249 dissolves=42
+WAVE frame=147 age=0.23333333333333 radius=548.071483320065 hazards=202 dissolves=92
+WAVE frame=148 age=0.28333333333333 radius=739.638741521311 hazards=149 dissolves=148
+WAVE frame=149 age=0.33333333333333 radius=932.74675515045 hazards=79 dissolves=213
+WAVE frame=150 age=0.38333333333333 radius=1115.83985849829 hazards=31 dissolves=235
+WAVE frame=151 age=0.43333333333333 radius=1277.36238585564 hazards=23 dissolves=198
+WAVE frame=152 age=0.48333333333333 radius=1405.75867151331 hazards=21 dissolves=141
+WAVE frame=153 age=0.53333333333333 radius=1489.47304976211 hazards=21 dissolves=66
+WAVE frame=154 age=0.58 radius=1517.09936523438 hazards=21 dissolves=16
+ACTUAL_HIT t=10.1666666666667 origin=(463.3275, 926.0) still_dangerous=277 lives=2
+SHIELD_CAPTURE 1933 checks, 0 failures; 360 native frames /20fps =18s; actual_hits=1; wave_frames=12 mixed_frames=12 peak_bullets=286 peak_remnants=238 renderer_median_ms=49.516 p95_ms=249.309

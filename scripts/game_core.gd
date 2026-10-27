@@ -13,6 +13,10 @@ const MAX_SHOTS := 220
 const MAX_ENEMIES := 50
 const MAX_PICKUPS := 60
 const MAX_EFFECTS := 90
+const MAX_CANCEL_EFFECTS := 384
+const MAX_DAMAGE_WAVES := 4
+const DAMAGE_WAVE_DURATION := 0.58
+const CANCEL_EFFECT_DURATION := 0.20
 const BOSS_TIME := 86.0
 const CYAN := Color("77e9ff")
 const PINK := Color("ff70c8")
@@ -36,6 +40,11 @@ var bullets: Array[Dictionary] = []
 var shots: Array[Dictionary] = []
 var pickups: Array[Dictionary] = []
 var effects: Array[Dictionary] = []
+# Gameplay wave and presentation remnants are separate: remnants NEVER collide.
+var damage_waves: Array[Dictionary] = []
+var cancel_effects: Array[Dictionary] = []
+var _cancel_pool: Array[Dictionary] = []
+var _next_damage_wave_id: int = 1
 var boss: Dictionary = {}
 var graze: int = 0
 var kills: int = 0
@@ -60,7 +69,7 @@ func resize_field(size: Vector2) -> void:
 		return
 	var ratio := size / field_size
 	player *= ratio
-	for collection in [enemies, bullets, shots, pickups, effects]:
+	for collection in [enemies, bullets, shots, pickups, effects, damage_waves, cancel_effects]:
 		for entity in collection:
 			entity["pos"] = Vector2(entity["pos"]) * ratio
 			if entity.has("origin_x"):
@@ -71,6 +80,10 @@ func resize_field(size: Vector2) -> void:
 			if boss.has(key):
 				boss[key] = Vector2(boss[key]) * ratio
 	field_size = size
+	for shield in damage_waves:
+		shield["max_radius"] = _damage_wave_extent(shield["pos"])
+		shield["radius"] = damage_wave_radius(shield)
+		shield["previous_radius"] = shield["radius"]
 	player.x = clampf(player.x, 24.0, field_size.x - 24.0)
 	player.y = clampf(player.y, 90.0, field_size.y - 34.0)
 
@@ -96,6 +109,11 @@ func reset() -> void:
 	shots.clear()
 	pickups.clear()
 	effects.clear()
+	damage_waves.clear()
+	for remnant in cancel_effects:
+		_cancel_pool.append(remnant)
+	cancel_effects.clear()
+	_next_damage_wave_id = 1
 	boss = {}
 	_next_id = 1
 	_shot_timer = 0.0
@@ -150,6 +168,8 @@ func _step_tick(dt: float, move: Vector2, fire: bool) -> void:
 	_update_shots(dt)
 	if state != "playing":
 		return
+	_update_cancel_effects(dt)
+	_update_damage_waves(dt)
 	_update_bullets(dt)
 	if state != "playing":
 		return
@@ -691,6 +711,13 @@ func _add_bullet(position: Vector2, velocity: Vector2, radius: float, color: Col
 	if bullets.size() < MAX_BULLETS:
 		bullets.append({"pos": position, "vel": velocity, "radius": radius, "color": color,
 			"kind": kind, "grazed": false, "age": 0.0, "angular_velocity": angular_velocity, "curve_duration": 3.0, "origin": position})
+		# A finite travelling front, not a lingering screen-sized absorber. New shots
+		# fully behind it are allowed; births ahead of it are still swept normally.
+		for shield in damage_waves:
+			if position.distance_to(shield["pos"]) + radius < float(shield["radius"]):
+				if not bullets.back().has("passed_waves"):
+					bullets.back()["passed_waves"] = {}
+				bullets.back()["passed_waves"][shield["id"]] = true
 
 ## Smooth acceleration is reserved for rare, distant straight needles.
 func _add_accelerating_bullet(position: Vector2, direction: Vector2, start_speed: float, end_speed: float) -> void:
@@ -713,6 +740,7 @@ static func bullet_travel_at(b: Dictionary, age: float) -> float:
 	return start_speed * age + (end_speed - start_speed) * (duration * (u*u*u - 0.5*u*u*u*u) + maxf(0.0, age-delay-duration))
 
 func _update_bullets(dt: float) -> void:
+	var wave_id_before := _next_damage_wave_id
 	for i in range(bullets.size() - 1, -1, -1):
 		var bullet: Dictionary = bullets[i]
 		var previous: Vector2 = bullet["pos"]
@@ -736,12 +764,22 @@ func _update_bullets(dt: float) -> void:
 			pos = previous + velocity * dt
 		bullet["pos"] = pos
 		bullet["age"] = float(bullet.get("age", 0.0)) + dt
+		if not damage_waves.is_empty():
+			var contact := _damage_wave_contact(bullet, previous, pos)
+			if not contact.is_empty():
+				_cancel_bullet(bullet, previous.lerp(pos, contact["time"]), contact["origin"], dt * (1.0-contact["time"]))
+				bullets.remove_at(i)
+				continue
 		var distance: float = _segment_distance_squared(player, previous, pos)
 		var radius: float = bullet["radius"]
 		if invulnerable <= 0.0 and distance < pow(radius + PLAYER_RADIUS, 2.0):
+			var hit_origin := player
 			_hit_player()
-			# _hit_player clears all bullets, so do not keep iterating this array.
-			return
+			# The striking bullet is harmless immediately, not one visual frame later.
+			_cancel_bullet(bullet, hit_origin, hit_origin, 0.0)
+			bullets.remove_at(i)
+			if state != "playing": return
+			continue
 		if not bool(bullet.get("grazed", false)) and invulnerable <= 0.0 and distance < pow(radius + 25.0, 2.0):
 			bullet["grazed"] = true
 			graze += 1
@@ -750,14 +788,118 @@ func _update_bullets(dt: float) -> void:
 			bullets.remove_at(i)
 			continue
 
+	# A hit can be detected halfway through this reverse loop. Sweep its initial
+	# contact area once more so already-updated bullets do not remain visibly live.
+	if _next_damage_wave_id != wave_id_before:
+		for i in range(bullets.size()-1,-1,-1):
+			var bullet: Dictionary = bullets[i]
+			for shield in damage_waves:
+				if shield["id"] < wave_id_before: continue
+				if Vector2(bullet["pos"]).distance_to(shield["pos"]) <= float(shield["radius"])+float(bullet["radius"]):
+					_cancel_bullet(bullet,bullet["pos"],shield["pos"],0.0)
+					bullets.remove_at(i)
+					break
+
+## Shared by simulation and drawing. Ease in/out joins smoothly; every swept test
+## uses the same two sampled radii as the visible front (120 Hz physics maximum).
+static func damage_wave_radius(shield: Dictionary) -> float:
+	var t := clampf(float(shield["age"]) / DAMAGE_WAVE_DURATION, 0.0, 1.0)
+	return lerpf(14.0, shield["max_radius"], t*t*(3.0-2.0*t))
+
+func _damage_wave_extent(origin: Vector2) -> float:
+	var extent := 0.0
+	# Include the retained offscreen projectile margin, not just visible corners.
+	for corner in [Vector2(-70,-150), Vector2(field_size.x+70,-150), Vector2(-70,field_size.y+70), field_size+Vector2(70,70)]:
+		extent = maxf(extent, origin.distance_to(corner))
+	return extent + 16.0
+
+func _start_damage_wave(origin: Vector2) -> void:
+	if damage_waves.size() >= MAX_DAMAGE_WAVES:
+		damage_waves.pop_front()
+	damage_waves.append({"id": _next_damage_wave_id, "pos": origin, "age": 0.0,
+		"max_radius": _damage_wave_extent(origin), "radius": 14.0, "previous_radius": 14.0})
+	_next_damage_wave_id += 1
+
+func _update_damage_waves(dt: float) -> void:
+	for i in range(damage_waves.size()-1,-1,-1):
+		var shield: Dictionary = damage_waves[i]
+		# Keep the last interval alive until all bullets have tested its final sweep.
+		if float(shield["age"]) >= DAMAGE_WAVE_DURATION:
+			damage_waves.remove_at(i)
+			continue
+		shield["previous_radius"] = shield["radius"]
+		shield["age"] = minf(DAMAGE_WAVE_DURATION, float(shield["age"])+dt)
+		shield["radius"] = damage_wave_radius(shield)
+
+## Earliest segment / expanding-disc intersection, including an outside->outside
+## tunnel through the wave. Solve |p + v*t|² = (r + dr*t)², t in [0,1].
+## Radii include the hostile collision core, not its decorative wake or glow.
+static func swept_wave_time(from: Vector2, to: Vector2, origin: Vector2, r0: float, r1: float, bullet_radius: float) -> float:
+	var p := from-origin
+	var v := to-from
+	var r := r0+bullet_radius
+	var dr := r1-r0
+	var a := v.length_squared()-dr*dr
+	var b := 2.0*(p.dot(v)-r*dr)
+	var c := p.length_squared()-r*r
+	if c <= 0.0: return 0.0
+	if absf(a) < 0.000001:
+		if b >= -0.000001: return -1.0
+		var linear := -c/b
+		return linear if linear >= 0.0 and linear <= 1.0 else -1.0
+	var discriminant := b*b-4.0*a*c
+	if discriminant < 0.0: return -1.0
+	var root := sqrt(maxf(0.0,discriminant))
+	# Stable quadratic roots avoid losing the near-origin solution to cancellation.
+	var q := -0.5*(b+root*(1.0 if b >= 0.0 else -1.0))
+	var first := q/a
+	var second := c/q if absf(q) > 0.000001 else -1.0
+	var result := INF
+	if first >= 0.0 and first <= 1.0: result = first
+	if second >= 0.0 and second <= 1.0: result = minf(result,second)
+	return result if is_finite(result) else -1.0
+
+func _damage_wave_contact(bullet: Dictionary, from: Vector2, to: Vector2) -> Dictionary:
+	var earliest := 2.0
+	var origin := Vector2.ZERO
+	for shield in damage_waves:
+		if bullet.get("passed_waves", {}).has(shield["id"]): continue
+		var time := swept_wave_time(from,to,shield["pos"],shield["previous_radius"],shield["radius"],bullet["radius"])
+		if time >= 0.0 and time < earliest:
+			earliest = time
+			origin = shield["pos"]
+	return {"time": earliest, "origin": origin} if earliest <= 1.0 else {}
+
+func _cancel_bullet(bullet: Dictionary, position: Vector2, origin: Vector2, initial_age: float) -> void:
+	var remnant: Dictionary
+	if cancel_effects.size() >= MAX_CANCEL_EFFECTS:
+		remnant = cancel_effects.pop_front()
+	elif not _cancel_pool.is_empty():
+		remnant = _cancel_pool.pop_back()
+	else:
+		remnant = {}
+	remnant["pos"] = position
+	remnant["radius"] = bullet.get("radius",6.0)
+	remnant["color"] = bullet.get("color",PINK)
+	remnant["angle"] = (position-origin).angle()
+	remnant["age"] = initial_age
+	cancel_effects.append(remnant)
+
+func _update_cancel_effects(dt: float) -> void:
+	for i in range(cancel_effects.size()-1,-1,-1):
+		cancel_effects[i]["age"] += dt
+		if float(cancel_effects[i]["age"]) >= CANCEL_EFFECT_DURATION:
+			_cancel_pool.append(cancel_effects[i])
+			cancel_effects.remove_at(i)
+
 func _hit_player() -> void:
 	if invulnerable > 0.0 or state != "playing":
 		return
 	lives -= 1
 	power = maxi(1, power - 1)
-	_add_effect(player, "death", 145.0, 1.0)
+	_start_damage_wave(player)
+	_add_effect(player, "hurt", 24.0, 0.32)
 	shake = 9.0
-	bullets.clear()
 	invulnerable = 3.0
 	last_event = "player_hit"
 	if lives <= 0:

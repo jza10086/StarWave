@@ -264,6 +264,8 @@ func _field() -> void:
 		_soft_polygon(_poly(p,17,4,-PI/2),GOLD)
 		_center(p+Vector2(0,5),"P" if pick.get("type","power")=="power" else "B",14,Color("fff1ce"))
 	for effect in core.effects: _impact(effect)
+	for shield in core.damage_waves: _damage_shield(shield)
+	for remnant in core.cancel_effects: _bullet_cancel(remnant)
 	for b in core.bullets: _bullet(b)
 	_player()
 	if bomb_flash > 0:
@@ -301,6 +303,39 @@ func _impact(effect: Dictionary) -> void:
 			draw_colored_polygon(pts,Color(.38,.68,1,a*.10))
 			draw_polyline(pts+PackedVector2Array([pts[0]]),Color(.55,.82,1,a*.65),1,true)
 	if age<.12: _neon_ring(p,5+age*80,Color(.8,1,1,a*.65),2)
+
+func _damage_shield(shield: Dictionary) -> void:
+	var p: Vector2 = shield.pos
+	var r: float = Core.damage_wave_radius(shield)
+	var t: float = clampf(shield.age/Core.DAMAGE_WAVE_DURATION,0,1)
+	var alpha := 1.0-smoothstep(.72,1.0,t)
+	# Transparent interior, narrow feathered band. No screen flash, oversized
+	# additive disc or second expanding radius that could imply a false hitbox.
+	for layer in 4:
+		var width := float(20-layer*5)
+		draw_arc(p,r,0,TAU,192,Color(CYAN,alpha*(.025+layer*.018)),width,true)
+	draw_arc(p,r,0,TAU,192,Color("b8fff4",alpha*.68),1.5,true)
+
+func _bullet_cancel(remnant: Dictionary) -> void:
+	var t := clampf(float(remnant.age)/Core.CANCEL_EFFECT_DURATION,0.0,1.0)
+	if t >= .99: return
+	var p: Vector2 = remnant.pos
+	if not Rect2(Vector2(-20,-20),FIELD+Vector2(40,40)).has_point(p): return
+	var r: float = remnant.radius
+	var fade := (1.0-t)*(1.0-t)
+	var col: Color = Color(remnant.color).lerp(Color("c0fff4"),.7)
+	# The dangerous filled core/wake vanish at contact. A tiny cool glint contracts
+	# immediately, then two open arcs and three short fragments dissolve in 0.20s.
+	if t < .45:
+		draw_circle(p,maxf(.2,r*.65*pow(1.0-t/.45,1.4)),Color(col.lightened(.4),fade*.72),true,-1,true)
+	var ring_radius := r*(.85+t*.95)
+	for side in 2:
+		var start: float = remnant.angle+side*PI+t*.5
+		draw_arc(p,ring_radius,start,start+PI*.68,12,Color(col,fade*.58),1.1,true)
+	for n in 3:
+		var dir := Vector2.from_angle(remnant.angle+n*TAU/3.0)
+		var at := p+dir*(r+2.0+t*10.0)
+		draw_line(at,at+dir*(2.0+2.0*fade),Color(col,fade*.65),1.2,true)
 
 func _bullet(b: Dictionary) -> void:
 	var p: Vector2 = b.pos

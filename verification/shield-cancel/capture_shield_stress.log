@@ -1,0 +1,10 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+WARNING: Could not set V-Sync mode, as changing V-Sync mode is not supported by the graphics driver.
+     at: set_use_vsync (platform/linuxbsd/x11/gl_manager_x11.cpp:372)
+OpenGL API 4.5 (Core Profile) Mesa 25.0.7-2+deb13u1 - Compatibility - Using Device: Mesa - llvmpipe (LLVM 19.1.7, 256 bits)
+
+NATIVE_STRESS_FRAME controlled-before-385 danger=385 remnants=0 neutral_bright_pixel_fraction=0.0006517650463
+NATIVE_STRESS_FRAME controlled-wave-before-contact danger=384 remnants=1 neutral_bright_pixel_fraction=0.00064019097222
+NATIVE_STRESS_FRAME controlled-wave-partial danger=192 remnants=192 neutral_bright_pixel_fraction=0.00115379050926
+NATIVE_STRESS_FRAME controlled-peak-384-remnants danger=0 remnants=384 neutral_bright_pixel_fraction=0.00061414930556
+SHIELD_STRESS 12136 checks, 0 failures; controlled_fixture=true; initial_bullets=385; peak_remnants=384; native=1440x960 Compatibility
