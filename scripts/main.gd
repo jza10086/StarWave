@@ -308,27 +308,77 @@ func _bullet(b: Dictionary) -> void:
 	if original.g>.65 and original.r>.8: col=Color("ffc35e")
 	var dir: Vector2 = -Vector2(b.get("vel",Vector2.DOWN)).normalized()
 	var needle: bool = b.get("type","") == "needle" or b.get("kind","") == "needle"
-	# Wakes are decorative energy flow; velocity, collision center and radius are untouched.
-	_ribbon(p,dir,66.0 if needle else 44.0,r*1.65,Color(col,.34),-1.0 if col.g>.5 else 1.0)
+	# Curved Boss wakes reconstruct actual recent arc positions, without history buffers.
+	if absf(float(b.get("angular_velocity",0.0))) > .00001:
+		_curve_wake(b,Color(col,.34))
+	else:
+		_ribbon(p,dir,66.0 if needle else 44.0,r*1.65,Color(col,.34),-1.0 if col.g>.5 else 1.0)
 	_soft_orb(p,r,col)
 	if needle:
 		_glyph_edge(PackedVector2Array([p+dir*r*2.4,p+dir.orthogonal()*r,p-dir*r*1.3,p-dir.orthogonal()*r]),Color(col,.85),.9)
 
+func _curve_wake(b: Dictionary, col: Color) -> void:
+	var p: Vector2 = b.pos
+	var velocity: Vector2 = b.vel
+	var curve: float = b.angular_velocity
+	var duration: float = minf(float(b.age),.55)
+	var r: float = b.radius
+	# Twelve bounded segments with transparent outer edges; exact inverse of the core's circular-arc integration.
+	for n in range(12):
+		var t0 := float(n)/12.0
+		var t1 := float(n+1)/12.0
+		var straight_time := maxf(float(b.age)-float(b.get("curve_duration",3.0)),0.0)
+		var back0 := duration*t0
+		var back1 := duration*t1
+		var v0 := velocity.rotated(-curve*maxf(back0-straight_time,0.0))
+		var v1 := velocity.rotated(-curve*maxf(back1-straight_time,0.0))
+		var a := p-velocity*minf(back0,straight_time)+Vector2(v0.y-velocity.y,velocity.x-v0.x)/curve
+		var bpos := p-velocity*minf(back1,straight_time)+Vector2(v1.y-velocity.y,velocity.x-v1.x)/curve
+		var side0 := v0.normalized().orthogonal()*r*(1-t0)*.85
+		var side1 := v1.normalized().orthogonal()*r*(1-t1)*.85
+		# Two feathered halves retain the approved soft colored ribbon, never a hard wedge.
+		for sign_side in [-1,1]:
+			draw_polygon(PackedVector2Array([a,bpos,bpos+side1*sign_side,a+side0*sign_side]),PackedColorArray([Color(col,col.a*pow(1-t0,1.7)),Color(col,col.a*pow(1-t1,1.7)),Color(col,0),Color(col,0)]))
+
 func _diamond(p: Vector2, radius: float, color: Color) -> void:
 	draw_colored_polygon(_poly(p,radius,4,-PI/2),color)
 
+func _attack_cue(e: Dictionary, p: Vector2, col: Color) -> void:
+	var remaining: float = e.get("attack_telegraph", e.get("telegraph", 0.0))
+	if remaining <= 0.0: return
+	var angle: float = e.get("warning_angle", PI*.5)
+	var kind: String = e.get("type", "")
+	if kind in ["orbiter","sweeper"] or (kind == "boss" and int(e.get("choreography_slot", 0)) >= 4):
+		# Open sector is deliberately hollow; short brackets mark its safe opening.
+		angle = e.get("gap_angle", angle)
+		for side in [-1, 1]:
+			var direction = Vector2.from_angle(angle + side*(.20 if kind == "sweeper" else .34))
+			draw_line(p+direction*40, p+direction*110, Color(col,.45), 1.2, true)
+	else:
+		var direction = Vector2.from_angle(angle)
+		var origins: Array[Vector2] = [p]
+		if kind == "boss":
+			origins = [p+Core.blade_tip_offset(0,float(e.get("rotation",0.0))),p+Core.blade_tip_offset(1,float(e.get("rotation",0.0)))]
+		for origin in origins:
+			for n in range(9):
+				var distance := 36.0 + n*28.0
+				draw_line(origin+direction*distance, origin+direction*(distance+12),Color(col,.38),1.2,true)
+	_sigil_arc(p, float(e.get("radius", 24))+9, -PI*.5, -PI*.5+TAU*clampf(remaining/.8,0,1),Color(col,.65),1.3)
+
 func _enemy(e: Dictionary) -> void:
-	var p: Vector2 = e.pos
-	if not Rect2(Vector2(-150,-150),FIELD+Vector2(300,300)).has_point(p): return
+	var world: Vector2 = e.pos
+	if not Rect2(Vector2(-150,-150),FIELD+Vector2(300,300)).has_point(world): return
 	var kind: String = e.get("type","scout")
 	var r: float = e.get("radius",19)
-	var col = Color("ffc35e") if kind=="gunner" else Color("aa77ff") if kind=="weaver" else Color("ff77ba")
+	var col = Color("ffc35e") if kind in ["gunner","sniper"] else Color("aa77ff") if kind in ["weaver","orbiter"] else Color("ff77ba")
 	if float(e.get("flash",0))>0: col=col.lightened(.35)
-	if float(e.get("telegraph",0))>0:
-		_ribbon(p+Vector2(0,r),Vector2.DOWN,110,12,Color(col,.17),0.5)
+	_attack_cue(e,world,col)
+	# Rotate a fixed local-space assembly, never regenerate geometry each frame.
+	# Simulation owns the angle: pause freezes it and collision remains at world.
+	draw_set_transform(world, float(e.get("rotation",0.0)) if kind=="boss" else 0.0)
+	var p := Vector2.ZERO
 	if kind=="boss":
 		col=Color("b184ff") if float(e.get("flash",0))<=0 else Color("e6bfff")
-		# One continuous translucent hit field, surrounded by disconnected calligraphic blades.
 		_soft_orb(p,r,Color(col,.32))
 		_sigil_arc(p,r,0,TAU,Color(col.lightened(.58),.9),1.8)
 		for n in range(6):
@@ -337,11 +387,29 @@ func _enemy(e: Dictionary) -> void:
 			_sigil_arc(p,r*1.12,a+.13,a+.72,Color(col,.55),.9)
 			var axis = Vector2.from_angle(a)
 			var tangent = axis.orthogonal()
-			var blade = PackedVector2Array([p+axis*r*.98+tangent*8,p+axis*r*1.67+tangent*22,p+axis*r*1.43+tangent*5,p+axis*r*1.13-tangent*8])
+			var blade = PackedVector2Array([p+axis*r*.98+tangent*8,p+Core.blade_tip_offset(n,0.0),p+axis*r*1.43+tangent*5,p+axis*r*1.13-tangent*8])
 			_soft_polygon(blade,col)
 			_ribbon(p+axis*r*1.45+tangent*9,-tangent,40,8,Color(col,.13),1.0)
 		_soft_polygon(_poly(p,24,4,-PI/2),Color(col.lightened(.3),.9))
 		_glyph_edge(PackedVector2Array([p+Vector2(-9,0),p+Vector2(0,10),p+Vector2(9,0),p+Vector2(0,-10)]),Color("f7e8ff"),2.2)
+	elif kind=="sniper":
+		# Long split lance and targeting brackets, unlike the compact gunner diamond.
+		for side in [-1,1]:
+			_soft_polygon(PackedVector2Array([Vector2(side*4,-r*1.2),Vector2(side*r*.65,0),Vector2(side*4,r*1.35),Vector2(side*9,0)]),col)
+			_glyph_edge(PackedVector2Array([Vector2(side*r*.9,-r*.4),Vector2(side*r*1.15,0),Vector2(side*r*.9,r*.4)]),col.lightened(.5),1.5,false)
+		_soft_orb(p,4,col)
+	elif kind=="sweeper":
+		# Wide detached scythes advertise lateral motion.
+		for side in [-1,1]:
+			_soft_polygon(PackedVector2Array([Vector2(side*5,-r*.35),Vector2(side*r*1.5,-r*.65),Vector2(side*r*1.1,r*.5),Vector2(side*r*.7,0)]),col)
+		_glyph_edge(_poly(p,7,4,PI*.5),col.lightened(.65),1.7)
+	elif kind=="orbiter":
+		# Broken circular gate: recognizable even without its warning cue.
+		for n in range(3):
+			var a := n*TAU/3.0-PI*.5
+			_sigil_arc(p,r,a+.15,a+1.65,col.lightened(.45),2)
+			_soft_polygon(_poly(Vector2.from_angle(a)*r,6,3,a),col)
+		_glyph_edge(_poly(p,r*.45,6,0),col,1.3)
 	elif kind=="gunner":
 		_soft_polygon(_poly(p,r,4,PI/2),col)
 		for n in range(3):
@@ -355,6 +423,7 @@ func _enemy(e: Dictionary) -> void:
 	else:
 		_soft_polygon(PackedVector2Array([p+Vector2(-r,-r*.6),p+Vector2(0,r*1.3),p+Vector2(r,-r*.6),p+Vector2(0,-r*.2)]),col)
 		_glyph_edge(PackedVector2Array([p+Vector2(-r*.36,0),p+Vector2(0,r*.5),p+Vector2(r*.36,0)]),col.lightened(.65),1.3,false)
+	draw_set_transform(ORIGIN)
 
 func _player() -> void:
 	var p: Vector2 = core.player

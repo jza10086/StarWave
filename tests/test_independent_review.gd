@@ -66,7 +66,7 @@ func run():
 		c.debug_set_boss(phase); c.invulnerable=999
 		tick(c,1)
 		check(c.bullets.is_empty(),"phase %d warning gives safe gap"%phase)
-		tick(c,2)
+		tick(c,4) # Include the scheduled ring after the locked-aim opening.
 		check(c.bullets.size()>10 and c.boss.phase==phase,"phase %d emits bullets"%phase)
 	c.debug_set_boss(); c.boss.telegraph=0; c.boss.hp=1599
 	c._add_bullet(Vector2(100,100),Vector2.ZERO,5,Color.WHITE); tick(c,.01)

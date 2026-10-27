@@ -174,28 +174,24 @@ func _update_stage() -> void:
 			stage_label = "SECTOR 03 · STORM FRONT"
 
 func _spawn_wave(index: int) -> void:
-	var variant: int = (index - 1) % 5
-	match variant:
-		0:
-			for i in range(7):
-				_spawn_enemy("scout", Vector2(field_size.x * (85.0 + i * 91.0) / 720.0, -40.0 - absf(i - 3.0) * 48.0), i)
-		1:
-			for i in range(4):
-				_spawn_enemy("gunner", Vector2(field_size.x * (125.0 + i * 155.0) / 720.0, -60.0 - (i % 2) * 90.0), i)
-			for i in range(3):
-				_spawn_enemy("scout", Vector2(field_size.x * (160.0 + i * 200.0) / 720.0, -320.0), i + 4)
-		2:
-			for i in range(6):
-				_spawn_enemy("weaver", Vector2(field_size.x * (120.0 + (i % 3) * 240.0) / 720.0, -60.0 - (i / 3) * 180.0), i)
-		3:
-			for i in range(8):
-				var x: float = field_size.x * (0.125 if i % 2 == 0 else 0.875)
-				_spawn_enemy("scout", Vector2(x, -60.0 - (i / 2) * 100.0), i)
-			_spawn_enemy("gunner", Vector2(field_size.x * 0.5, -180.0), 8)
-		4:
-			for i in range(3):
-				_spawn_enemy("gunner", Vector2(field_size.x * (160.0 + i * 200.0) / 720.0, -60.0), i)
-				_spawn_enemy("weaver", Vector2(field_size.x * (160.0 + i * 200.0) / 720.0, -290.0), i + 3)
+	# First teach each new silhouette alone, then alternate formations and mixed roles.
+	# Eight-second wave spacing and 86-second boss arrival remain unchanged.
+	var recipes := [
+		["scout", "scout", "scout", "scout", "scout"],
+		["sniper"], ["sweeper"], ["orbiter"],
+		["sniper", "scout", "sniper"],
+		["weaver", "sweeper", "weaver"],
+		["orbiter", "gunner"],
+		["sniper", "sweeper", "scout"],
+		["weaver", "orbiter", "weaver"],
+		["sniper", "gunner", "sweeper"],
+		["orbiter", "scout", "sniper"]]
+	var recipe: Array = recipes[(index - 1) % recipes.size()]
+	for i in range(recipe.size()):
+		var lane: float = float(i + 1) / float(recipe.size() + 1)
+		if recipe.size() == 1:
+			lane = 0.32 if recipe[i] == "sniper" else (0.68 if recipe[i] == "sweeper" else 0.38)
+		_spawn_enemy(recipe[i], Vector2(field_size.x * lane, -48.0 - i * 48.0), i)
 
 func _spawn_enemy(kind: String, position: Vector2, order: int) -> void:
 	if enemies.size() >= MAX_ENEMIES:
@@ -211,9 +207,22 @@ func _spawn_enemy(kind: String, position: Vector2, order: int) -> void:
 		health = 40.0
 		radius = 22.0
 		speed = 91.0
+	elif kind == "sniper":
+		health = 65.0
+		radius = 24.0
+		speed = 150.0
+	elif kind == "sweeper":
+		health = 100.0
+		radius = 28.0
+		speed = 145.0
+	elif kind == "orbiter":
+		health = 115.0
+		radius = 29.0
+		speed = 150.0
 	enemies.append({"id": _next_id, "type": kind, "pos": position, "origin_x": position.x,
 		"hp": health, "max_hp": health, "radius": radius, "speed": speed,
-		"age": 0.0, "timer": 0.7 + (order % 3) * 0.2, "order": order, "flash": 0.0})
+		"age": 0.0, "timer": 0.65 + order * 0.55, "order": order, "flash": 0.0,
+		"telegraph": 0.0, "warning_angle": PI * 0.5, "attack_index": 0, "burst_left": 0})
 	_next_id += 1
 
 func _update_enemies(dt: float) -> void:
@@ -229,32 +238,91 @@ func _update_enemies(dt: float) -> void:
 			pos.x = clampf(float(enemy["origin_x"]) + sin(age * 1.6 + order * 0.8) * 100.0, 40.0, field_size.x - 40.0)
 		elif enemy["type"] == "scout":
 			pos.x = clampf(float(enemy["origin_x"]) + sin(age * 1.5 + order) * 40.0, 32.0, field_size.x - 32.0)
+		elif enemy["type"] in ["sniper", "sweeper", "orbiter"]:
+			# Arrive from above, hold a readable upper-field station, retreat above.
+			var station_y: float = 210.0 + order * 30.0
+			if age > 7.0:
+				pos.y -= (float(enemy["speed"]) + 210.0) * dt
+			else:
+				pos.y = minf(pos.y, station_y)
+			if enemy["type"] == "sweeper":
+				pos.x = clampf(float(enemy["origin_x"]) + sin(age * 0.8) * field_size.x * 0.19, 110.0, field_size.x - 110.0)
+			elif enemy["type"] == "orbiter":
+				pos.x = clampf(float(enemy["origin_x"]) + sin(age * 1.2) * 95.0, 110.0, field_size.x - 110.0)
+				if age > 2.5 and age < 7.0:
+					pos.y = move_toward(pos.y - float(enemy["speed"]) * dt, station_y + sin(age * 1.2) * 32.0, float(enemy["speed"]) * dt)
 		enemy["pos"] = pos
+		if age > 9.0 and enemy["type"] in ["sniper", "sweeper", "orbiter"]:
+				enemies.remove_at(i)
+				continue
 		if pos.y > field_size.y + 80.0:
 			enemies.remove_at(i)
 			continue
 		if pos.y > 25.0 and pos.y < field_size.y - 210.0:
-			enemy["timer"] -= dt
-			if float(enemy["timer"]) <= 0.0:
-				_enemy_fire(enemy)
+			if float(enemy["telegraph"]) > 0.0:
+				enemy["telegraph"] = maxf(0.0, float(enemy["telegraph"]) - dt)
+				if float(enemy["telegraph"]) <= 0.0:
+					_enemy_fire(enemy)
+			else:
+				enemy["timer"] -= dt
+				if float(enemy["timer"]) <= 0.0 and age < 7.0:
+					# Lock once, before the flash. Never track during the warning or burst.
+					if int(enemy["burst_left"]) > 0:
+						_enemy_fire(enemy)
+					else:
+						enemy["warning_angle"] = (player - pos).angle()
+						if enemy["type"] == "weaver":
+							enemy["warning_angle"] = PI * 0.5 + sin(age * 1.5) * 0.55
+						elif enemy["type"] == "sweeper":
+							enemy["warning_angle"] = PI * 0.5 + sin(age * 0.8) * 0.35
+						enemy["telegraph"] = 0.7 if enemy["type"] in ["sniper", "orbiter"] else 0.5
 		if invulnerable <= 0.0 and pos.distance_squared_to(player) < pow(float(enemy["radius"]) * 0.7 + PLAYER_RADIUS, 2.0):
 			_hit_player()
 
 func _enemy_fire(enemy: Dictionary) -> void:
 	var pos: Vector2 = enemy["pos"]
-	var aim: float = (player - pos).angle()
+	# Suppress point-blank emissions and all shots after retreat begins.
+	if pos.distance_to(player) < 140.0 or float(enemy["age"]) >= 7.0:
+		enemy["timer"] = 0.8
+		enemy["burst_left"] = 0
+		return
+	var aim: float = enemy["warning_angle"]
 	match String(enemy["type"]):
 		"scout":
-			_fan(pos, aim, 3, 0.16, 192.0, PINK, 5.0)
-			enemy["timer"] = 1.55
+			_fan(pos, aim, 3, 0.18, 180.0, PINK, 5.0)
+			enemy["timer"] = 1.8
 		"gunner":
-			_fan(pos, aim, 5, 0.18, 170.0, GOLD, 6.5)
-			if wave >= 5:
-				_ring(pos, 10, 0.25, 125.0, PINK, 5.0)
-			enemy["timer"] = 1.9
+			_fan(pos, aim, 5, 0.20, 160.0, GOLD, 6.5)
+			enemy["timer"] = 2.2
 		"weaver":
-			_fan(pos, PI * 0.5 + sin(float(enemy["age"]) * 1.5) * 0.65, 5, 0.22, 155.0, PURPLE, 5.5)
-			enemy["timer"] = 1.15
+			_fan(pos, aim, 5, 0.23, 150.0, PURPLE, 5.5)
+			enemy["timer"] = 1.65
+		"sniper":
+			_fan(pos, aim, 3, 0.12, 225.0, GOLD, 4.5, "needle")
+			_continue_burst(enemy, 2, 0.25, 2.3)
+		"sweeper":
+			# Two wings sweep together; the middle lane remains intentionally open.
+			var sweep: float = aim + (int(enemy["attack_index"]) % 3 - 1) * 0.12
+			_fan(pos, sweep - 0.48, 3, 0.13, 155.0, PINK, 5.5)
+			_fan(pos, sweep + 0.48, 3, 0.13, 155.0, PINK, 5.5)
+			_continue_burst(enemy, 3, 0.34, 2.1)
+		"orbiter":
+			_gap_ring(pos, 18, float(enemy["age"]) * 0.2, aim, 0.48, 130.0, PURPLE, 5.5)
+			_continue_burst(enemy, 2, 0.45, 2.5)
+	enemy["attack_index"] += 1
+
+func _continue_burst(enemy: Dictionary, count: int, spacing: float, rest: float) -> void:
+	if int(enemy["burst_left"]) == 0:
+		enemy["burst_left"] = count - 1
+	else:
+		enemy["burst_left"] -= 1
+	enemy["timer"] = spacing if int(enemy["burst_left"]) > 0 else rest
+
+func _gap_ring(position: Vector2, count: int, offset: float, gap: float, half_gap: float, speed: float, color: Color, radius: float) -> void:
+	for i in range(count):
+		var angle: float = offset + TAU * float(i) / count
+		if absf(wrapf(angle - gap, -PI, PI)) > half_gap:
+			_add_bullet(position, Vector2.from_angle(angle) * speed, radius, color)
 
 func _spawn_boss() -> void:
 	_boss_spawned = true
@@ -267,7 +335,8 @@ func _spawn_boss() -> void:
 	boss = {"id": _next_id, "type": "boss", "name": "HARBINGER", "pos": Vector2(field_size.x * 0.5, -90.0),
 		"hp": 2400.0, "max_hp": 2400.0, "radius": 58.0, "phase": 1, "phase_time": 0.0,
 		"age": 0.0, "telegraph": 3.0, "timer": 0.4, "aim_timer": 1.6, "flash": 0.0,
-		"pattern_index": 0, "warning_angle": PI * 0.5}
+		"pattern_index": 0, "warning_angle": PI * 0.5, "gap_angle": PI * 0.5,
+		"rotation": 0.0, "rotation_speed": 0.16, "attack_telegraph": 0.0, "choreography_slot": 0, "cycle_time": 0.0, "pattern_rotation": 0.0}
 	_next_id += 1
 	last_event = "boss_warning"
 
@@ -292,6 +361,13 @@ func _update_boss(dt: float) -> void:
 		return
 	boss["age"] += dt
 	boss["phase_time"] += dt
+	# Simulation-owned radians: rendering, pause and refresh rate cannot advance it.
+	var slot_now: int = boss["choreography_slot"]
+	var attacking: bool = float(boss["telegraph"]) <= 0.0 and slot_now in [2, 3, 5, 6, 7] and float(boss["cycle_time"]) < 4.5
+	var target_speed: float = ([0.0, 0.8, -1.05, 1.3][int(boss["phase"])] if attacking else [0.0, 0.16, -0.20, 0.24][int(boss["phase"])])
+	var previous_speed: float = boss["rotation_speed"]
+	boss["rotation_speed"] = lerpf(previous_speed, target_speed, 1.0 - exp(-3.0 * dt))
+	boss["rotation"] = wrapf(float(boss["rotation"]) + (previous_speed + float(boss["rotation_speed"])) * 0.5 * dt, -PI, PI)
 	boss["flash"] = maxf(0.0, float(boss["flash"]) - dt)
 	var age: float = boss["age"]
 	var target := Vector2(field_size.x * 0.5 + sin(age * 0.42) * field_size.x * 0.2, 148.0 + sin(age * 0.83) * 24.0)
@@ -306,6 +382,9 @@ func _update_boss(dt: float) -> void:
 		boss["timer"] = 0.25
 		boss["aim_timer"] = 1.3
 		boss["pattern_index"] = 0
+		boss["choreography_slot"] = 0
+		boss["cycle_time"] = 0.0
+		boss["attack_telegraph"] = 0.0
 		score += bullets.size() * 3
 		bullets.clear()
 		_add_effect(boss["pos"], "phase", 190.0, 1.5)
@@ -315,35 +394,62 @@ func _update_boss(dt: float) -> void:
 		stage_label = "WARNING · HARBINGER / PHASE %d" % phase
 		return
 	stage_label = ["", "HARBINGER · PETAL CASCADE", "HARBINGER · ROTATING HALO", "HARBINGER · LAST BLOOM"][phase]
-	boss["timer"] -= dt
-	boss["aim_timer"] -= dt
 	var pos: Vector2 = boss["pos"]
-	var phase_time: float = boss["phase_time"]
-	if float(boss["timer"]) <= 0.0:
-		var pattern: int = boss["pattern_index"]
-		match phase:
-			1:
-				# Downward petals leave generous lanes between each short fan.
-				_fan(pos, PI * 0.5 + sin(phase_time * 1.1) * 0.3, 13, 0.125, 155.0, PINK, 6.0)
-				boss["timer"] = 0.75
-			2:
-				# Alternating offset rings, deliberately slower than aimed shots.
-				_ring(pos, 22, pattern * 0.22, 145.0, GOLD if pattern % 2 == 0 else PURPLE, 5.5)
-				boss["timer"] = 0.66
+	boss["attack_telegraph"] = maxf(0.0, float(boss["attack_telegraph"]) - dt)
+	boss["cycle_time"] += dt
+	var time: float = boss["cycle_time"]
+	var slot: int = boss["choreography_slot"]
+	# A single score orders every emission: aim cue, locked double burst,
+	# gap cue, rotating blade rings, then a long breathing window.
+	var beats := [0.0, 0.55, 0.95, 2.0, 2.75, 3.45, 4.15, 7.2]
+	if time >= beats[slot]:
+		match slot:
+			0:
+				boss["warning_angle"] = (player - pos).angle()
+				boss["attack_telegraph"] = 0.55
+			1, 2:
+				if player.distance_to(pos) >= 150.0:
+					_boss_fan(slot - 1, float(boss["warning_angle"]), 5 if phase == 3 else 3, 0.15, 205.0, GOLD, 4.5, "needle", 0.12 if phase != 2 else -0.12)
 			3:
-				# Two counter-rotating flower layers; speed separation opens gaps.
-				_ring(pos, 16, pattern * 0.24, 135.0, PINK, 6.0)
-				_ring(pos, 12, -pattern * 0.18 + 0.11, 190.0, GOLD, 5.0)
-				boss["timer"] = 0.65
-		boss["pattern_index"] = pattern + 1
-	if float(boss["aim_timer"]) <= 0.0:
-		var aim: float = (player - pos).angle()
-		boss["warning_angle"] = aim
-		_fan(pos + Vector2(-35.0, 25.0), aim, 3, 0.14, 235.0, GOLD, 4.5, "needle")
-		_fan(pos + Vector2(35.0, 25.0), aim, 3, 0.14, 235.0, GOLD, 4.5, "needle")
-		boss["aim_timer"] = 2.1 if phase < 3 else 1.65
+				boss["gap_angle"] = clampf((player - pos).angle(), 0.45, PI - 0.45)
+				boss["pattern_rotation"] = boss["rotation"]
+				boss["attack_telegraph"] = 0.75
+			4, 5, 6:
+				if slot < 6 or phase == 3:
+					var offset: float = float(boss["pattern_rotation"]) + (slot - 4) * (0.12 if phase != 2 else -0.16)
+					_boss_gap_ring(18 + phase * 4, offset, float(boss["gap_angle"]), 0.64 if phase == 3 else 0.70, 135.0 + phase * 5.0, PINK if phase == 1 else PURPLE, 0.11 if phase != 2 else -0.11)
+					boss["pattern_index"] += 1
+			7:
+				boss["cycle_time"] = 0.0
+				boss["choreography_slot"] = -1
+		boss["choreography_slot"] += 1
+
 	if invulnerable <= 0.0 and pos.distance_squared_to(player) < 55.0 * 55.0:
 		_hit_player()
+
+## Shared by the renderer and emitters: the six colored blade tips, never the core.
+static func blade_tip_offset(index: int, rotation: float) -> Vector2:
+	var axis := Vector2.from_angle(index * TAU / 6.0 - PI * 0.5 + rotation)
+	return axis * 58.0 * 1.67 + axis.orthogonal() * 22.0
+
+func boss_blade_position(index: int) -> Vector2:
+	return Vector2(boss["pos"]) + blade_tip_offset(index, float(boss["rotation"]))
+
+func _boss_fan(blade: int, angle: float, count: int, spacing: float, speed: float, color: Color, radius: float, kind: String, curve: float) -> void:
+	var origin := boss_blade_position(blade)
+	if origin.distance_to(player) < 140.0:
+		return
+	for i in range(count):
+		_add_bullet(origin, Vector2.from_angle(angle + (i - (count - 1) * 0.5) * spacing) * speed, radius, color, kind, curve)
+
+func _boss_gap_ring(count: int, offset: float, gap: float, half_gap: float, speed: float, color: Color, curve: float) -> void:
+	for i in range(count):
+		var angle: float = offset + TAU * float(i) / count
+		if absf(wrapf(angle - gap, -PI, PI)) > half_gap:
+			var blade: int = posmod(int(round((angle - float(boss["rotation"]) + PI * 0.5) / (TAU / 6.0))), 6)
+			var origin := boss_blade_position(blade)
+			if origin.distance_to(player) >= 140.0:
+				_add_bullet(origin, Vector2.from_angle(angle) * speed, 5.5, color, "orb", curve)
 
 func _fire_player() -> void:
 	var spread: float = 0.0 if focused else 0.11
@@ -394,10 +500,10 @@ func _destroy_enemy(index: int, drops: bool = true) -> void:
 	var enemy: Dictionary = enemies[index]
 	var pos: Vector2 = enemy["pos"]
 	kills += 1
-	score += 700 if enemy["type"] == "gunner" else (400 if enemy["type"] == "weaver" else 250)
+	score += 700 if enemy["type"] in ["gunner", "sweeper", "orbiter"] else (400 if enemy["type"] in ["weaver", "sniper"] else 250)
 	_add_effect(pos, "explosion", float(enemy["radius"]) * 2.1, 0.52)
 	if drops:
-		_add_pickup(pos, "power" if kills % 4 == 0 or enemy["type"] == "gunner" else "score")
+		_add_pickup(pos, "power" if kills % 4 == 0 or enemy["type"] in ["gunner", "sniper", "sweeper", "orbiter"] else "score")
 		if kills % 17 == 0:
 			_add_pickup(pos + Vector2(22.0, 0.0), "bomb")
 	enemies.remove_at(index)
@@ -411,16 +517,27 @@ func _ring(position: Vector2, count: int, offset: float, speed: float, color: Co
 	for i in range(count):
 		_add_bullet(position, Vector2.from_angle(offset + TAU * float(i) / count) * speed, radius, color)
 
-func _add_bullet(position: Vector2, velocity: Vector2, radius: float, color: Color, kind: String = "orb") -> void:
+func _add_bullet(position: Vector2, velocity: Vector2, radius: float, color: Color, kind: String = "orb", angular_velocity: float = 0.0) -> void:
 	if bullets.size() < MAX_BULLETS:
 		bullets.append({"pos": position, "vel": velocity, "radius": radius, "color": color,
-			"kind": kind, "grazed": false, "age": 0.0})
+			"kind": kind, "grazed": false, "age": 0.0, "angular_velocity": angular_velocity, "curve_duration": 3.0, "origin": position})
 
 func _update_bullets(dt: float) -> void:
 	for i in range(bullets.size() - 1, -1, -1):
 		var bullet: Dictionary = bullets[i]
 		var previous: Vector2 = bullet["pos"]
-		var pos: Vector2 = previous + Vector2(bullet["vel"]) * dt
+		var velocity: Vector2 = bullet["vel"]
+		var curve: float = bullet.get("angular_velocity", 0.0)
+		var pos: Vector2
+		var curve_dt: float = minf(dt, maxf(0.0, float(bullet.get("curve_duration", 3.0)) - float(bullet.get("age", 0.0))))
+		if absf(curve) > 0.00001 and curve_dt > 0.0:
+			# Exact arc then tangent flight. Capping the bend at three seconds keeps
+			# tall portrait travel from closing the deliberately open escape wedge.
+			var turned := velocity.rotated(curve * curve_dt)
+			pos = previous + Vector2(turned.y - velocity.y, velocity.x - turned.x) / curve + turned * (dt - curve_dt)
+			bullet["vel"] = turned
+		else:
+			pos = previous + velocity * dt
 		bullet["pos"] = pos
 		bullet["age"] = float(bullet.get("age", 0.0)) + dt
 		var distance: float = _segment_distance_squared(player, previous, pos)

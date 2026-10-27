@@ -110,7 +110,8 @@ func _run() -> void:
 		peak_bullets = maxi(peak_bullets, a.bullets.size())
 		for enemy in a.enemies:
 			observed[enemy["type"]] = true
-	check(observed.size() == 3, "all three enemy archetypes appear")
+	# The stage now teaches three additional movement/attack roles.
+	check(observed.size() == 6, "all six taught enemy archetypes appear")
 	check(not a.boss.is_empty() and a.wave == 12, "full timeline reaches boss")
 	check(a.player == b.player and a.score == b.score and a.bullets == b.bullets and a.boss == b.boss, "simulation repeatable with identical input")
 	check(peak_bullets <= Core.MAX_BULLETS and a.shots.size() <= Core.MAX_SHOTS and a.enemies.size() <= Core.MAX_ENEMIES, "bounded entity storage")
