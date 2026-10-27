@@ -1,6 +1,7 @@
 extends SceneTree
-## No-black-outline style contract plus rendering-independent gameplay invariants.
-## Actual pixels and input interruption flows are verified by capture_gradient.gd.
+## No-black-outline contract plus rendering-independent gameplay invariants.
+## Colored arcs and translucent planes are intentional in the energy-symbol redesign.
+## Actual pixels and input interruption flows are verified by capture_energy.gd.
 var checks := 0
 var failures := 0
 func _initialize(): call_deferred("run")
@@ -19,9 +20,9 @@ func run():
 	for name in ["_player", "_enemy", "_bullet"]:
 		var body := function_body(source, name)
 		check(not body.is_empty(), name + " renderer exists")
-		for forbidden in ["draw_arc(", "draw_line(", "draw_polyline(", "_neon_ring(", "_neon_polygon(", "_neon_line("]:
-			check(not body.contains(forbidden), name + " has no contour / stacked ring: " + forbidden)
-	check(source.contains("_soft_orb("), "smooth filled bullet helper")
+		for forbidden in ['stroke="#000', 'Color("000000")', "Color.BLACK"]:
+			check(not body.contains(forbidden), name + " has no black outline: " + forbidden)
+	check(source.contains("_soft_orb("), "flat circular energy bullet helper")
 	check(source.contains("_soft_polygon("), "filled silhouette helper")
 	for name in ["_soft_orb", "_soft_polygon"]:
 		var body := function_body(source, name)
@@ -31,7 +32,7 @@ func run():
 		check(not body.contains('stroke="#000'), name + " no black SVG stroke")
 		check(body.contains("shape_cache.has(key)"), name + " reused texture cache")
 	check(function_body(source,"_soft_orb").contains('<circle cx="32" cy="32" r="30"'), "analytic circular bullet silhouette, no faceted core")
-	check(function_body(source,"_soft_orb").contains("r*32.0/30.0"), "opaque circle maps to unchanged collision radius")
+	check(function_body(source,"_soft_orb").contains("r*32.0/30.0"), "circle maps to unchanged collision radius")
 	check(not function_body(source,"_space").contains("draw_polyline("), "background has no angular wire fragments")
 	var app = load("res://scenes/main.tscn").instantiate()
 	root.add_child(app)

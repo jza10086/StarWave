@@ -69,8 +69,7 @@ func _light_pass() -> void:
 		_aura_at(e.pos,Vector2.ONE*e.radius*3.4,Color(col,.12))
 	if not core.boss.is_empty():
 		var p: Vector2 = core.boss.pos
-		_aura_at(p,Vector2(220,160),Color(.62,.53,.8,.16))
-		for side in [-1,1]: _aura_at(p+Vector2(side*94,7),Vector2(65,65),Color(.8,.55,.65,.12))
+		_aura_at(p,Vector2(220,160),Color(.47,.24,1,.24))
 	for shot in core.shots: _aura_at(shot.pos,Vector2(13,30),Color(CYAN,.27))
 	for b in core.bullets:
 		var original: Color = b.get("color",Color("ff70c8"))
@@ -190,7 +189,7 @@ func _poly(p: Vector2, radius: float, sides: int, angle: float = 0.0) -> PackedV
 	for i in range(sides): pts.append(p + Vector2.from_angle(angle + TAU*i/sides)*radius)
 	return pts
 
-# Colored luminous frames and deep continuous fills, rasterized at 4x. No black contours.
+# Transparent colored planes and alpha falloff, rasterized at 4x. No black contours.
 # Keys are local geometry + palette only: movement never allocates textures.
 func _bleed_transparent_rgb(img: Image, col: Color) -> void:
 	# Transparent black leaks into RGB mip averages unless the entire padding is filled.
@@ -212,7 +211,7 @@ func _soft_polygon(pts: PackedVector2Array, col: Color) -> void:
 		var size = bounds.size+Vector2.ONE*4
 		# Explicit pixel-space coordinates avoid renderer-dependent objectBoundingBox units.
 		# Frame stays inside the original silhouette: clip the wide colored stroke.
-		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"><defs><linearGradient id="v" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="%s" y2="%s"><stop stop-color="#%s"/><stop offset="0.42" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></linearGradient><linearGradient id="rim" x1="0%%" y1="0%%" x2="65%%" y2="100%%"><stop stop-color="#%s"/><stop offset="0.45" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></linearGradient><clipPath id="shape"><polygon points="%s"/></clipPath></defs><polygon points="%s" fill="url(#v)"/><polygon points="%s" fill="none" stroke="url(#rim)" stroke-width="3.4" stroke-linejoin="round" clip-path="url(#shape)"/></svg>' % [size.x,size.y,size.x*.65,size.y,col.lightened(.12).to_html(false),col.darkened(.40).to_html(false),col.darkened(.82).to_html(false),col.lightened(.62).to_html(false),col.to_html(false),col.darkened(.18).to_html(false),points,points,points]
+		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"><defs><linearGradient id="v" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="%s" y2="%s"><stop stop-color="#%s" stop-opacity="0.38"/><stop offset="0.55" stop-color="#%s" stop-opacity="0.18"/><stop offset="1" stop-color="#%s" stop-opacity="0.05"/></linearGradient><clipPath id="shape"><polygon points="%s"/></clipPath></defs><polygon points="%s" fill="url(#v)"/><polygon points="%s" fill="none" stroke="#%s" stroke-opacity="0.95" stroke-width="2.6" stroke-linejoin="round" clip-path="url(#shape)"/></svg>' % [size.x,size.y,size.x*.35,size.y,col.to_html(false),col.to_html(false),col.to_html(false),points,points,points,col.lightened(.56).to_html(false)]
 		var img = Image.new()
 		img.load_svg_from_string(svg,4.0)
 		_bleed_transparent_rgb(img,col)
@@ -223,8 +222,8 @@ func _soft_polygon(pts: PackedVector2Array, col: Color) -> void:
 func _soft_orb(p: Vector2, r: float, col: Color) -> void:
 	var key = "orb"+col.to_html(false)
 	if not shape_cache.has(key):
-		# Bright colored perimeter, saturated interior, continuous radial ramp. Never black.
-		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><defs><radialGradient id="v" cx="50%%" cy="50%%" r="50%%"><stop stop-color="#%s"/><stop offset="0.35" stop-color="#%s"/><stop offset="0.72" stop-color="#%s"/><stop offset="0.90" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#v)"/></svg>' % [col.lightened(.48).to_html(false),col.to_html(false),col.darkened(.25).to_html(false),col.lightened(.30).to_html(false),col.lightened(.50).to_html(false)]
+		# Flat colored energy disc with luminous circumference; no sphere lighting or specular spot.
+		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="#%s" fill-opacity="0.68"/><circle cx="32" cy="32" r="27.8" fill="none" stroke="#%s" stroke-width="4.4"/></svg>' % [col.to_html(false),col.lightened(.65).to_html(false)]
 		var img = Image.new()
 		img.load_svg_from_string(svg,4.0)
 		_bleed_transparent_rgb(img,col)
@@ -252,17 +251,18 @@ func _field() -> void:
 	for shot in core.shots:
 		var p: Vector2 = shot.pos
 		if not Rect2(Vector2(5,0),FIELD-Vector2(10,0)).has_point(p): continue
-		_trail(p+Vector2(0,4),Vector2.DOWN,52,4,Color(CYAN,.42))
-		# A filled antialiased capsule, not parallel bright contour strokes.
-		draw_line(p+Vector2(0,6),p-Vector2(0,12),Color("a2ddd7"),3.0,true)
-		_soft_orb(p+Vector2(0,6),1.5,Color("a2ddd7"))
-		_soft_orb(p-Vector2(0,12),1.5,Color("a2ddd7"))
+		_ribbon(p+Vector2(0,4),Vector2.DOWN,80,8,Color(CYAN,.42),sin(p.x*.07))
+		# White-cyan sliver glyph: the same narrow shot center, not a bead or a laser rod.
+		var head = PackedVector2Array([p+Vector2(0,-12),p+Vector2(3,0),p+Vector2(0,7),p+Vector2(-3,0)])
+		draw_colored_polygon(head,Color("c5fff8"))
+		_glyph_edge(head,Color("efffff"),.7)
+
 	for e in core.enemies: _enemy(e)
 	if not core.boss.is_empty(): _enemy(core.boss)
 	for pick in core.pickups:
 		var p: Vector2 = pick.pos
 		_soft_polygon(_poly(p,17,4,-PI/2),GOLD)
-		_center(p+Vector2(0,5),"P" if pick.get("type","power")=="power" else "B",14,Color("483d29"))
+		_center(p+Vector2(0,5),"P" if pick.get("type","power")=="power" else "B",14,Color("fff1ce"))
 	for effect in core.effects: _impact(effect)
 	for b in core.bullets: _bullet(b)
 	_player()
@@ -293,9 +293,10 @@ func _impact(effect: Dictionary) -> void:
 	for n in range(7):
 		var dir = Vector2.from_angle(n*TAU/7+float(effect.get("radius",24)))
 		var q = p+dir*r*(.65+float(n%3)*.2)
-		var pts = _poly(q,(3+n%3)*a,3,n+age*3)
+		var pts = PackedVector2Array([q+dir*(8+n%3*3)*a,q+dir.orthogonal()*4*a,q-dir*(4+n%2*3)*a])
 		if Rect2(Vector2(8,8),FIELD-Vector2(16,16)).has_point(q):
-			draw_polyline(pts+PackedVector2Array([pts[0]]),Color(.4,.9,1,a*.5),1,true)
+			draw_colored_polygon(pts,Color(.38,.68,1,a*.10))
+			draw_polyline(pts+PackedVector2Array([pts[0]]),Color(.55,.82,1,a*.65),1,true)
 	if age<.12: _neon_ring(p,5+age*80,Color(.8,1,1,a*.65),2)
 
 func _bullet(b: Dictionary) -> void:
@@ -303,10 +304,15 @@ func _bullet(b: Dictionary) -> void:
 	if not Rect2(Vector2(8,8),FIELD-Vector2(16,16)).has_point(p): return
 	var r: float = b.get("radius",6)
 	var original: Color = b.get("color",Color("ff70c8"))
-	var col = Color("ff6c9e") if original.r>original.b else Color("bc85f5")
-	if original.g>.65 and original.r>.8: col=Color("ffc16a")
-	# Solid circular body equals collision radius; colored luminous rim, never a black border.
+	var col = Color("ff6096") if original.r>original.b else Color("b17bff")
+	if original.g>.65 and original.r>.8: col=Color("ffc35e")
+	var dir: Vector2 = -Vector2(b.get("vel",Vector2.DOWN)).normalized()
+	var needle: bool = b.get("type","") == "needle" or b.get("kind","") == "needle"
+	# Wakes are decorative energy flow; velocity, collision center and radius are untouched.
+	_ribbon(p,dir,66.0 if needle else 44.0,r*1.65,Color(col,.34),-1.0 if col.g>.5 else 1.0)
 	_soft_orb(p,r,col)
+	if needle:
+		_glyph_edge(PackedVector2Array([p+dir*r*2.4,p+dir.orthogonal()*r,p-dir*r*1.3,p-dir.orthogonal()*r]),Color(col,.85),.9)
 
 func _diamond(p: Vector2, radius: float, color: Color) -> void:
 	draw_colored_polygon(_poly(p,radius,4,-PI/2),color)
@@ -316,60 +322,67 @@ func _enemy(e: Dictionary) -> void:
 	if not Rect2(Vector2(-150,-150),FIELD+Vector2(300,300)).has_point(p): return
 	var kind: String = e.get("type","scout")
 	var r: float = e.get("radius",19)
-	var col = Color("eeb66c") if kind=="gunner" else Color("af88e7") if kind=="weaver" else Color("e67eaa")
-	if float(e.get("flash",0))>0: col=Color("d8a4f1")
+	var col = Color("ffc35e") if kind=="gunner" else Color("aa77ff") if kind=="weaver" else Color("ff77ba")
+	if float(e.get("flash",0))>0: col=col.lightened(.35)
 	if float(e.get("telegraph",0))>0:
-		_trail(p+Vector2(0,r),Vector2.DOWN,110,8,Color(col,.12))
+		_ribbon(p+Vector2(0,r),Vector2.DOWN,110,12,Color(col,.17),0.5)
 	if kind=="boss":
-		col=Color("ac83dc") if float(e.get("flash",0))<=0 else Color("d8a4f1")
-		_soft_polygon(_poly(p,r,6,PI/6),col)
-		_soft_polygon(_poly(p,r*.65,6,PI/6),col.darkened(.18))
-		for side in [-1,1]:
-			var wing = p+Vector2(side*(r+36),7)
-			_soft_polygon(PackedVector2Array([p+Vector2(side*40,-8),wing+Vector2(0,-10),wing+Vector2(0,10),p+Vector2(side*40,10)]),col.darkened(.2))
-			_soft_polygon(PackedVector2Array([wing+Vector2(-23,-27),wing+Vector2(23,-27),wing+Vector2(31,15),wing+Vector2(0,33),wing+Vector2(-31,15)]),col)
-			_soft_orb(wing,9,Color("eab3c5"))
-			_trail(wing+Vector2(0,-25),Vector2.UP,30,9,Color(col,.28))
-		_soft_orb(p,17,Color("ead4e5"))
+		col=Color("b184ff") if float(e.get("flash",0))<=0 else Color("e6bfff")
+		# One continuous translucent hit field, surrounded by disconnected calligraphic blades.
+		_soft_orb(p,r,Color(col,.32))
+		_sigil_arc(p,r,0,TAU,Color(col.lightened(.58),.9),1.8)
+		for n in range(6):
+			var a = float(n)*TAU/6-PI/2
+			_sigil_arc(p,r*.78,a+.10,a+.72,Color(col,.9),2.0)
+			_sigil_arc(p,r*1.12,a+.13,a+.72,Color(col,.55),.9)
+			var axis = Vector2.from_angle(a)
+			var tangent = axis.orthogonal()
+			var blade = PackedVector2Array([p+axis*r*.98+tangent*8,p+axis*r*1.67+tangent*22,p+axis*r*1.43+tangent*5,p+axis*r*1.13-tangent*8])
+			_soft_polygon(blade,col)
+			_ribbon(p+axis*r*1.45+tangent*9,-tangent,40,8,Color(col,.13),1.0)
+		_soft_polygon(_poly(p,24,4,-PI/2),Color(col.lightened(.3),.9))
+		_glyph_edge(PackedVector2Array([p+Vector2(-9,0),p+Vector2(0,10),p+Vector2(9,0),p+Vector2(0,-10)]),Color("f7e8ff"),2.2)
 	elif kind=="gunner":
-		_soft_polygon(_poly(p,r*1.2,6,PI/6),col)
-		for side in [-1,1]:
-			_soft_polygon(PackedVector2Array([p+Vector2(side*6-3,0),p+Vector2(side*6+3,0),p+Vector2(side*6+3,r*1.3),p+Vector2(side*6-3,r*1.3)]),col.darkened(.12))
-		_soft_orb(p,5,Color("f6e0bd"))
+		_soft_polygon(_poly(p,r,4,PI/2),col)
+		for n in range(3):
+			var a = n*TAU/3+PI/2
+			_sigil_arc(p,r*1.2,a-.32,a+.32,col.lightened(.45),1.5)
+		_glyph_edge(_poly(p,r*.39,3,PI/2),col.lightened(.7),1.4)
 	elif kind=="weaver":
-		_soft_polygon(_poly(p,r*1.3,4,0),col)
-		_soft_orb(p,5,Color("e6d9f5"))
+		for side in [-1,1]:
+			_soft_polygon(PackedVector2Array([p+Vector2(0,-r),p+Vector2(side*r*1.2,0),p+Vector2(side*r*.48,r*.7),p+Vector2(side*r*.6,0)]),col)
+		_glyph_edge(_poly(p,5,4,0),col.lightened(.65),1.5)
 	else:
 		_soft_polygon(PackedVector2Array([p+Vector2(-r,-r*.6),p+Vector2(0,r*1.3),p+Vector2(r,-r*.6),p+Vector2(0,-r*.2)]),col)
+		_glyph_edge(PackedVector2Array([p+Vector2(-r*.36,0),p+Vector2(0,r*.5),p+Vector2(r*.36,0)]),col.lightened(.65),1.3,false)
 
 func _player() -> void:
 	var p: Vector2 = core.player
 	if core.state=="lost": return
 	var alpha = .45 if core.invulnerable>0 and sin(visual_time*25)>0 else 1.0
-	var flame = 45+10*sin(visual_time*31)
 	for side in [-1,1]:
-		_trail(p+Vector2(side*13,12),Vector2.DOWN,flame,6,Color(CYAN,alpha*.40))
-	var pts=PackedVector2Array([p+Vector2(0,-27),p+Vector2(10,-3),p+Vector2(26,17),p+Vector2(9,11),p+Vector2(0,17),p+Vector2(-9,11),p+Vector2(-26,17),p+Vector2(-10,-3)])
-	_soft_polygon(pts,Color("64d2d9")*Color(1,1,1,alpha))
-	_soft_polygon(PackedVector2Array([p+Vector2(0,-17),p+Vector2(4,-2),p+Vector2(0,6),p+Vector2(-4,-2)]),Color("507e9a")*Color(1,1,1,alpha))
+		_ribbon(p+Vector2(side*10,12),Vector2.DOWN,65,9,Color(CYAN,alpha*.32),side*.8)
+		var wing = PackedVector2Array([p+Vector2(side*4,-13),p+Vector2(side*25,17),p+Vector2(side*7,8),p+Vector2(side*3,17)])
+		_soft_polygon(wing,Color(CYAN,alpha))
+	_soft_polygon(PackedVector2Array([p+Vector2(0,-27),p+Vector2(5,-5),p+Vector2(0,5),p+Vector2(-5,-5)]),Color(CYAN.lightened(.6),alpha))
 	if core.focused: _soft_orb(p,4,Color("ffffff"))
 
 func _hud() -> void:
 	# Small translucent edge overlays; the playfield continues behind them.
-	draw_style_box(_hud_style(), Rect2(20, 18, 254, 44))
+	_hud_strip(Rect2(20, 18, 254, 44),CYAN)
 	_text(Vector2(36, 47), "分数  %08d" % core.score, 22, Color("effaf5"))
-	draw_style_box(_hud_style(), Rect2(FIELD.x - 360, 18, 280, 44))
+	_hud_strip(Rect2(FIELD.x - 360, 18, 280, 44),Color("b184ff"))
 	_diamond(Vector2(FIELD.x - 337, 40), 7, CYAN)
 	_text(Vector2(FIELD.x - 320, 47), "生命 %d" % core.lives, 20, Color("effaf5"))
 	draw_arc(Vector2(FIELD.x - 213, 40), 7, 0, TAU, 24, GOLD, 2)
 	_text(Vector2(FIELD.x - 197, 47), "脉冲 %d" % core.bombs, 20, GOLD)
-	draw_style_box(_hud_style(), Rect2(FIELD.x - 64, 18, 44, 44))
+	_hud_strip(Rect2(FIELD.x - 64, 18, 44, 44),CYAN)
 	for x in [FIELD.x - 47, FIELD.x - 37]:
 		draw_line(Vector2(x, 32), Vector2(x, 48), Color("c1d7df"), 3)
 	if not core.boss.is_empty():
 		var bar_width = minf(460, FIELD.x * 0.34)
 		var left = (FIELD.x - bar_width) * 0.5
-		draw_style_box(_hud_style(), Rect2(left - 12, 10, bar_width + 24, 46))
+		_hud_strip(Rect2(left - 12, 10, bar_width + 24, 46),Color("b184ff"))
 		_center(Vector2(FIELD.x * 0.5, 32), "HARBINGER  /  %d" % core.boss.phase, 15, Color("e6cafa"))
 		draw_rect(Rect2(left, 43, bar_width, 4), Color("3c304f"))
 		draw_rect(Rect2(left, 43, bar_width * clampf(float(core.boss.hp) / core.boss.max_hp, 0, 1), 4), Color("c780ff"))
@@ -431,3 +444,37 @@ func _field_arc(p: Vector2, radius: float, color: Color, width: float) -> void:
 		var a = p + Vector2.from_angle(i*TAU/100)*radius
 		var b = p + Vector2.from_angle((i+1)*TAU/100)*radius
 		if bounds.has_point(a) and bounds.has_point(b): draw_line(a,b,color,width,true)
+
+# All curves are presentation-only, bounded (12 segments) and allocation-free of textures.
+func _ribbon(p: Vector2, dir: Vector2, length: float, width: float, col: Color, curl: float = 1.0) -> void:
+	var side = dir.orthogonal()
+	# Four strips instead of 24 per-segment draw calls; the center stays luminous
+	# while both outside edges and the tail decay to zero alpha.
+	for layer in range(2):
+		for sign_side in [-1,1]:
+			var pts = PackedVector2Array()
+			var colors = PackedColorArray()
+			for i in range(13):
+				var t = float(i)/12
+				var center = p+dir*length*t+side*(sin(t*PI)*width*curl+layer*width*.35*t)
+				pts.append(center)
+				colors.append(Color(col,col.a*pow(1-t,1.4)*(.8 if layer==0 else .48)))
+			for i in range(12,-1,-1):
+				var t = float(i)/12
+				var center = p+dir*length*t+side*(sin(t*PI)*width*curl+layer*width*.35*t)
+				pts.append(center+side*sign_side*width*(1-t)*(.82 if layer==0 else .38))
+				colors.append(Color(col,0))
+			draw_polygon(pts,colors)
+
+func _glyph_edge(pts: PackedVector2Array, col: Color, width: float = 1.3, closed: bool = true) -> void:
+	draw_polyline(pts+PackedVector2Array([pts[0]]) if closed else pts,col,width,true)
+
+func _sigil_arc(p: Vector2, radius: float, start: float, end: float, col: Color, width: float) -> void:
+	draw_arc(p,radius,start,end,64,col,width,true)
+
+func _hud_strip(rect: Rect2, col: Color) -> void:
+	var a = rect.position
+	var b = rect.end
+	draw_polygon(PackedVector2Array([a,Vector2(b.x,a.y),b,Vector2(a.x,b.y)]),PackedColorArray([Color(col,.18),Color(col,0),Color(col,0),Color(col,.07)]))
+	draw_line(a,Vector2(a.x,b.y),Color(col.lightened(.45),.9),1.5,true)
+	draw_line(Vector2(a.x,b.y),Vector2(b.x,b.y),Color(col,.22),.8,true)
