@@ -1,0 +1,17 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+RADIAL_COVERAGE field=(1440.0, 960.0) directions=36 downward=17 maximum_angular_gap=0.17453336715698 lower_occupancy=12 tip_error=0.0
+RADIAL_COVERAGE field=(1706.667, 960.0) directions=36 downward=17 maximum_angular_gap=0.17453336715698 lower_occupancy=12 tip_error=0.0
+RADIAL_COVERAGE field=(1440.0, 1800.0) directions=36 downward=17 maximum_angular_gap=0.17453336715698 lower_occupancy=9 tip_error=0.0
+SPIRAL_LIVE phase=1 emitted=1040 radial=180 spiral=840 downward=420 full_volleys=140 breathing_breaks=6 angular_bins=24 lower_columns=12 lower_peak=116 peak=329 batch=30 tip_error=0.0 active_mean_speed=5.67147320546364
+SPIRAL_LIVE phase=2 emitted=1076 radial=216 spiral=840 downward=420 full_volleys=140 breathing_breaks=6 angular_bins=24 lower_columns=12 lower_peak=109 peak=316 batch=36 tip_error=0.0 active_mean_speed=6.35204999011927
+SPIRAL_LIVE phase=3 emitted=1112 radial=252 spiral=840 downward=420 full_volleys=140 breathing_breaks=6 angular_bins=24 lower_columns=12 lower_peak=105 peak=307 batch=42 tip_error=0.0 active_mean_speed=7.0326267747749
+SPIRAL_TIMESTEP hz=30 count=38 maximum_path_error=0.0
+SPIRAL_TIMESTEP hz=60 count=38 maximum_path_error=0.0
+SPIRAL_CORRIDOR label=landscape1920x1080 field=(1706.667, 960.0) row=780.0 tested_seconds=29.9999999999989 first_sealed=-1.0 minimum_reachable=72 peak_near_row=13 occupied_intervals=146 route_speed=128.0 padding=2
+SPIRAL_CORRIDOR label=portrait800x1000 field=(1440.0, 1800.0) row=1620.0 tested_seconds=29.9999999999989 first_sealed=-1.0 minimum_reachable=80 peak_near_row=7 occupied_intervals=95 route_speed=128.0 padding=2
+SPIRAL_CORRIDOR label=small960x640 field=(1440.0, 960.0) row=780.0 tested_seconds=29.9999999999989 first_sealed=-1.0 minimum_reachable=71 peak_near_row=12 occupied_intervals=133 route_speed=128.0 padding=2
+SPIRAL_PILOT label=landscape1920x1080 field=(1706.667, 960.0) state=playing lives=2 bombs=3 seconds=30.0000000000239 peak=328
+SPIRAL_PILOT label=portrait800x1000 field=(1440.0, 1800.0) state=playing lives=2 bombs=3 seconds=30.0000000000239 peak=341
+SPIRAL_PILOT label=small960x640 field=(1440.0, 960.0) state=playing lives=2 bombs=3 seconds=30.0000000000239 peak=305
+SPIRAL_BARRAGE_TESTS 83 checks, 0 failures

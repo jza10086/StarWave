@@ -1,5 +1,7 @@
 # Damage shield sweep and individual cancellation — verification
 
+Historical verification for the original **0.58 s / 0.20 s** timings. The current **1.5 s / 0.5 s** timing update is verified in [`../shield-timing/QA.md`](../shield-timing/QA.md); the captures and measurements below are preserved as historical evidence, not current-timing results.
+
 Engine: **Godot 4.7.2** (`4.7.2.stable.official.ed1daf0bf`), native GL Compatibility. Source and test changes were independently reviewed. The primary actual-gameplay stills were visually approved before commit/push.
 
 ## Reproduce

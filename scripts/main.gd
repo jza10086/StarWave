@@ -325,7 +325,7 @@ func _bullet_cancel(remnant: Dictionary) -> void:
 	var fade := (1.0-t)*(1.0-t)
 	var col: Color = Color(remnant.color).lerp(Color("c0fff4"),.7)
 	# The dangerous filled core/wake vanish at contact. A tiny cool glint contracts
-	# immediately, then two open arcs and three short fragments dissolve in 0.20s.
+	# immediately, then two open arcs and three short fragments dissolve in 0.5s.
 	if t < .45:
 		draw_circle(p,maxf(.2,r*.65*pow(1.0-t/.45,1.4)),Color(col.lightened(.4),fade*.72),true,-1,true)
 	var ring_radius := r*(.85+t*.95)

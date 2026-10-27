@@ -1,0 +1,6 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+ARC_BOUNDARY_ERROR 0.00973160937428
+AUTOPLAY field=(1440.0, 960.0) state=won elapsed=118.05 lives=3 bombs=0 bombs_used=3 power=4 kills=19 peak_bullets=320 boss_hp=0.0
+AUTOPLAY field=(1440.0, 1800.0) state=won elapsed=116.35 lives=3 bombs=2 bombs_used=1 power=4 kills=15 peak_bullets=262 boss_hp=0.0
+PATTERNS 49 checks, 0 failures
