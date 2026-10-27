@@ -1,0 +1,10 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+FLOW_BOSS_MAX_STEP 7.74835205078125
+FLOW_AUTOPLAY label=landscape1920x1080 field=(1706.667, 960.0) state=won elapsed=110.78 lives=3 bombs_used=0 power=4 kills=14 peak_bullets=40 peak_enemies=5 close_births=0 residual_wave_transitions=10 min_sampled_open_lanes=12 edge_seconds=0.0 boss_hp=0.0
+FLOW_WAVE_TRANSITIONS landscape1920x1080 [[1, 1.82, 0], [2, 9.8, 14], [3, 17.82, 2], [4, 25.82, 24], [5, 33.82, 8], [6, 41.82, 8], [7, 49.82, 24], [8, 57.82, 20], [9, 65.82, 24], [10, 73.8, 19], [11, 81.8, 30], [12, 86.0, 0]]
+FLOW_AUTOPLAY label=portrait800x1000 field=(1440.0, 1800.0) state=won elapsed=121.25 lives=3 bombs_used=0 power=4 kills=15 peak_bullets=50 peak_enemies=5 close_births=0 residual_wave_transitions=10 min_sampled_open_lanes=14 edge_seconds=0.0 boss_hp=0.0
+FLOW_WAVE_TRANSITIONS portrait800x1000 [[1, 1.82, 0], [2, 9.8, 27], [3, 17.82, 6], [4, 25.82, 30], [5, 33.82, 7], [6, 41.82, 12], [7, 49.82, 32], [8, 57.82, 14], [9, 65.82, 36], [10, 73.8, 17], [11, 81.8, 27], [12, 86.0, 0]]
+FLOW_AUTOPLAY label=small960x640 field=(1440.0, 960.0) state=won elapsed=113.43 lives=3 bombs_used=1 power=4 kills=19 peak_bullets=40 peak_enemies=5 close_births=0 residual_wave_transitions=9 min_sampled_open_lanes=11 edge_seconds=0.32 boss_hp=0.0
+FLOW_WAVE_TRANSITIONS small960x640 [[1, 1.82, 0], [2, 9.8, 18], [3, 17.82, 0], [4, 25.82, 24], [5, 33.82, 6], [6, 41.82, 1], [7, 49.82, 26], [8, 57.82, 18], [9, 65.82, 20], [10, 73.8, 15], [11, 81.8, 21], [12, 86.0, 0]]
+FLOW 51 checks, 0 failures

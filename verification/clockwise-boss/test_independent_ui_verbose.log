@@ -1,0 +1,34 @@
+WorkerThreadPool: 9 threads, 2 max low-priority.
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+SDL: Init OK!
+Using "default" pen tablet driver...
+
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+CORE API HASH: 2004498165
+EDITOR API HASH: 1696660745
+Loading resource: res://tests/test_independent_ui.gd remapped: res://tests/test_independent_ui.gd
+Completed load for: 'res://tests/test_independent_ui.gd' remapped 'res://tests/test_independent_ui.gd' at thread -1
+SceneTreeFTI: traversal method DEFAULT
+Loaded system CA certificates
+Loading resource: res://scenes/main.tscn remapped: res://scenes/main.tscn
+Loading resource: res://scripts/main.gd remapped: res://scripts/main.gd
+Loading resource: res://assets/fonts/NotoSansSC-Regular.otf remapped: res://assets/fonts/NotoSansSC-Regular.otf
+Loading resource: res://.godot/imported/NotoSansSC-Regular.otf-c0c85f3b3b2ad6d96b65df5f3103bb43.fontdata remapped: res://.godot/imported/NotoSansSC-Regular.otf-c0c85f3b3b2ad6d96b65df5f3103bb43.fontdata
+Completed load for: 'res://assets/fonts/NotoSansSC-Regular.otf' remapped 'res://assets/fonts/NotoSansSC-Regular.otf' at thread -1
+Loading resource: res://assets/shaders/deep_space.gdshader remapped: res://assets/shaders/deep_space.gdshader
+Completed load for: 'res://assets/shaders/deep_space.gdshader' remapped 'res://assets/shaders/deep_space.gdshader' at thread -1
+Completed load for: 'res://scripts/main.gd' remapped 'res://scripts/main.gd' at thread -1
+Completed load for: 'res://scenes/main.tscn' remapped 'res://scenes/main.tscn' at thread -1
+INDEPENDENT UI: 23 checks, 0 failures
+WARNING: 2 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)
+XR: Clearing primary interface
+XR: Removed interface "Native mobile"
+XR: Removed interface "OpenXR"
+Leaked instance: AudioStreamWAV:9223372064889505245 - Reference count: 1
+Leaked instance: AudioStreamPlaybackWAV:9223372066047133199 - Reference count: 1
+Hint: Leaked instances typically happen when nodes are removed from the scene tree (with `remove_child()`) but not freed (with `free()` or `queue_free()`).
+Orphan StringName: Master (static: 0, total: 2)
+StringName: 1 unclaimed string names at exit.

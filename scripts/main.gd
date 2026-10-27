@@ -365,19 +365,36 @@ func _enemy(e: Dictionary) -> void:
 	var p := Vector2.ZERO
 	if kind=="boss":
 		col=Color("b184ff") if float(e.get("flash",0))<=0 else Color("e6bfff")
-		_soft_orb(p,r,Color(col,.32))
-		_sigil_arc(p,r,0,TAU,Color(col.lightened(.58),.9),1.8)
-		for n in range(6):
-			var a = float(n)*TAU/6-PI/2
-			_sigil_arc(p,r*.78,a+.10,a+.72,Color(col,.9),2.0)
-			_sigil_arc(p,r*1.12,a+.13,a+.72,Color(col,.55),.9)
-			var axis = Vector2.from_angle(a)
-			var tangent = axis.orthogonal()
-			var blade = PackedVector2Array([p+axis*r*.98+tangent*8,p+Core.blade_tip_offset(n,0.0),p+axis*r*1.43+tangent*5,p+axis*r*1.13-tangent*8])
-			_soft_polygon(blade,col)
-			_ribbon(p+axis*r*1.45+tangent*9,-tangent,40,8,Color(col,.13),1.0)
-		_soft_polygon(_poly(p,24,4,-PI/2),Color(col.lightened(.3),.9))
-		_glyph_edge(PackedVector2Array([p+Vector2(-9,0),p+Vector2(0,10),p+Vector2(9,0),p+Vector2(0,-10)]),Color("f7e8ff"),2.2)
+		# The circle is the unchanged collision field. Everything beyond it is decoration.
+		draw_set_transform(world)
+		_soft_orb(p,r,Color(col,.24))
+		_sigil_arc(p,r,0,TAU,Color(col.lightened(.58),.85),1.6)
+		var opening: float = e.get("iris_opening",.04)
+		var iris_angle: float = e.get("iris_rotation",0.0)
+		var bank: float = e.get("bank",0.0)
+		# Detached iris leaves move radially and hinge in delayed response to the outer blades.
+		# Fixed polygons + draw transforms keep texture caching bounded throughout the motion.
+		var iris_leaf := PackedVector2Array([Vector2(-6,-8),Vector2(17,-8),Vector2(27,1),Vector2(11,10),Vector2(-5,4)])
+		for n in 6:
+			var a := n*TAU/6.0 + iris_angle
+			var pivot := Vector2.from_angle(a) * (25.0 + opening*14.0)
+			draw_set_transform(world+pivot,a+.32-opening*.55)
+			_soft_polygon(iris_leaf,Color(col,.60))
+			draw_set_transform(world,iris_angle+bank*.4)
+			_sigil_arc(p,47+opening*5,n*TAU/6.0+.08,n*TAU/6.0+.57,Color(col,.60),1.2)
+		for n in 6:
+			var blade_opening: float = e.get("blade_openings",PackedFloat32Array([.04,.04,.04,.04,.04,.04]))[n]
+			var pose := Core.blade_transform(n,float(e.get("rotation",0.0)),blade_opening,bank)
+			draw_set_transform(world+pose.origin,pose.get_rotation())
+			_soft_polygon(Core.boss_blade_polygon(),col)
+			# One interior edge gives the scythe a readable cutting direction, not another contour cloud.
+			_glyph_edge(PackedVector2Array([Vector2(5,-4),Vector2(22,-10),Vector2(47,-11)]),Color(col.lightened(.65),.63),.9,false)
+			# A tiny root facet is part of the energy symbol, not a bolt or a metallic linkage.
+			_soft_polygon(PackedVector2Array([Vector2(-9,-4),Vector2(-4,-8),Vector2(1,-4),Vector2(-4,0)]),Color(col,.72))
+		# The hub rotates at its own reduced ratio instead of being welded to all six blades.
+		draw_set_transform(world,float(e.get("hub_rotation",0.0)),Vector2.ONE*(1+opening*.15))
+		_soft_polygon(_poly(p,20,4,-PI/2),Color(col.lightened(.3),.9))
+		_glyph_edge(PackedVector2Array([Vector2(-8,0),Vector2(0,8),Vector2(8,0),Vector2(0,-8)]),Color("f7e8ff"),1.8)
 	elif kind=="sniper":
 		# Long split lance and detached side glyphs, unlike the compact gunner diamond.
 		for side in [-1,1]:

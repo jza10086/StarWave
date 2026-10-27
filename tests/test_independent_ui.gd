@@ -13,6 +13,8 @@ func key(scene,code):
 func run():
 	var scene=load("res://scenes/main.tscn").instantiate()
 	root.add_child(scene)
+	# This fixture tests controls/layout, not audio playback; do not leave a playing stream at shutdown.
+	scene.muted = true
 	await process_frame
 	scene.set_process(false)
 	check(scene.core.state=="ready","initial ready")

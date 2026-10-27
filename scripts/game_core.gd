@@ -397,7 +397,8 @@ func _spawn_boss() -> void:
 		"hp": 2400.0, "max_hp": 2400.0, "radius": 58.0, "phase": 1, "phase_time": 0.0,
 		"age": 0.0, "telegraph": 3.0, "timer": 0.4, "aim_timer": 1.6, "flash": 0.0,
 		"pattern_index": 0, "warning_angle": PI * 0.5, "gap_angle": PI * 0.5,
-		"rotation": 0.0, "rotation_speed": 0.16, "attack_telegraph": 0.0, "choreography_slot": 0, "cycle_time": 0.0, "pattern_rotation": 0.0}
+		"rotation": 0.0, "rotation_speed": 0.28, "bank": 0.0, "iris_rotation": 0.0, "hub_rotation": 0.0,
+		"blade_openings": PackedFloat32Array([0.04, 0.04, 0.04, 0.04, 0.04, 0.04]), "iris_opening": 0.04, "attack_telegraph": 0.0, "choreography_slot": 0, "cycle_time": 0.0, "pattern_rotation": 0.0}
 	_next_id += 1
 	last_event = "boss_warning"
 
@@ -407,7 +408,7 @@ func debug_set_boss(phase: int = 1) -> void:
 	elapsed = BOSS_TIME
 	power = 4
 	_spawn_boss()
-	boss["pos"] = Vector2(field_size.x * 0.5, 160.0)
+	boss["pos"] = Vector2(field_size.x * 0.5, 205.0)
 	boss["age"] = 3.0
 	boss["telegraph"] = 1.2
 	boss["phase"] = clampi(phase, 1, 3)
@@ -422,17 +423,14 @@ func _update_boss(dt: float) -> void:
 		return
 	boss["age"] += dt
 	boss["phase_time"] += dt
-	# Simulation-owned radians: rendering, pause and refresh rate cannot advance it.
-	var attacking: bool = float(boss["telegraph"]) <= 0.0 and float(boss["cycle_time"]) >= 1.35 and float(boss["cycle_time"]) < 4.55
-	var target_speed: float = ([0.0, 0.8, -1.05, 1.3][int(boss["phase"])] if attacking else [0.0, 0.16, -0.20, 0.24][int(boss["phase"])])
-	var previous_speed: float = boss["rotation_speed"]
-	boss["rotation_speed"] = lerpf(previous_speed, target_speed, 1.0 - exp(-3.0 * dt))
-	boss["rotation"] = wrapf(float(boss["rotation"]) + (previous_speed + float(boss["rotation_speed"])) * 0.5 * dt, -PI, PI)
+	# Every visible rotor turns clockwise in screen coordinates (positive radians).
+	# Rotation/hinges are simulation-owned, not render time or a reversible sine wave.
+	var previous_position: Vector2 = boss["pos"]
 	boss["flash"] = maxf(0.0, float(boss["flash"]) - dt)
 	var time_before: float = boss["cycle_time"]
 	boss["phrase"] = "reposition" if time_before < 1.5 else ("blades" if time_before < 2.6 else ("curves" if time_before < 4.55 else ("expand" if time_before < 6.2 else "rest")))
 	if float(boss["telegraph"]) > 0.0:
-		boss["pos"] = Vector2(boss["pos"]).lerp(Vector2(field_size.x * 0.5, 170.0), 1.0 - exp(-2.4 * dt))
+		boss["pos"] = Vector2(boss["pos"]).lerp(Vector2(field_size.x * 0.5, 205.0), 1.0 - exp(-2.4 * dt))
 	elif boss.has("move_from") and int(boss["choreography_slot"]) != 0:
 		var u := clampf(time_before / 1.35, 0.0, 1.0)
 		u = u * u * (3.0 - 2.0 * u)
@@ -453,6 +451,7 @@ func _update_boss(dt: float) -> void:
 		bullets.clear()
 		_add_effect(boss["pos"], "phase", 190.0, 1.5)
 		last_event = "phase_change"
+	_update_boss_animation(dt, previous_position)
 	if float(boss["telegraph"]) > 0.0:
 		boss["telegraph"] = maxf(0.0, float(boss["telegraph"]) - dt)
 		stage_label = "WARNING · HARBINGER / PHASE %d" % phase
@@ -471,7 +470,7 @@ func _update_boss(dt: float) -> void:
 			0:
 				boss["move_from"] = boss["pos"]
 				var cycle: int = boss.get("cycle_index", 0)
-				boss["move_to"] = Vector2(field_size.x * (0.36 if cycle % 2 == 0 else 0.64), 165.0 + (cycle % 2) * 25.0)
+				boss["move_to"] = Vector2(field_size.x * (0.36 if cycle % 2 == 0 else 0.64), 205.0 + (cycle % 2) * 25.0)
 				boss["cycle_index"] = cycle + 1
 				boss["warning_angle"] = (player - pos).angle()
 				boss["attack_telegraph"] = 1.6
@@ -504,13 +503,73 @@ func _update_boss(dt: float) -> void:
 	if invulnerable <= 0.0 and pos.distance_squared_to(player) < 55.0 * 55.0:
 		_hit_player()
 
-## Shared by the renderer and emitters: the six colored blade tips, never the core.
-static func blade_tip_offset(index: int, rotation: float) -> Vector2:
-	var axis := Vector2.from_angle(index * TAU / 6.0 - PI * 0.5 + rotation)
-	return axis * 58.0 * 1.67 + axis.orthogonal() * 22.0
+## Quintic pose keys: zero velocity/acceleration at each key, with bounded lag
+## between the three opposite blade pairs. These are body poses, never warning UI.
+static func _boss_pose_key(time: float, keys: Array) -> float:
+	if time <= float(keys[0].x):
+		return float(keys[0].y)
+	for i in range(1, keys.size()):
+		if time <= float(keys[i].x):
+			var u := inverse_lerp(float(keys[i-1].x), float(keys[i].x), time)
+			u = u * u * u * (u * (u * 6.0 - 15.0) + 10.0)
+			return lerpf(float(keys[i-1].y), float(keys[i].y), u)
+	return float(keys.back().y)
+
+static func boss_opening_at(time: float) -> float:
+	return _boss_pose_key(time, [Vector2(0,.04), Vector2(.65,.04), Vector2(1.12,.04),
+		Vector2(1.64,.90), Vector2(2.08,1.0), Vector2(2.60,.28), Vector2(2.88,.24),
+		Vector2(3.30,1.0), Vector2(3.66,.76), Vector2(3.98,1.0), Vector2(4.55,.88),
+		Vector2(5.40,.10), Vector2(6.20,.04), Vector2(7.70,.04), Vector2(8.4,.04)])
+
+func _update_boss_animation(dt: float, previous_position: Vector2) -> void:
+	var time: float = boss["cycle_time"]
+	var entering: bool = float(boss["telegraph"]) > 0.0
+	var intensity: float = 1.0 + (int(boss["phase"]) - 1) * .12
+	var target_speed := .38 if entering else _boss_pose_key(time, [Vector2(0,.45), Vector2(.65,.45),
+		Vector2(.85,.60), Vector2(1.30,2.8), Vector2(1.87,2.25), Vector2(2.12,3.05),
+		Vector2(2.60,.70), Vector2(2.86,.70), Vector2(3.23,3.50), Vector2(3.65,2.65),
+		Vector2(3.98,3.75), Vector2(4.45,2.85), Vector2(4.85,1.55), Vector2(5.50,.44),
+		Vector2(6.20,.28), Vector2(7.50,.28), Vector2(8.4,.45)]) * intensity
+	var previous_speed: float = boss["rotation_speed"]
+	boss["rotation_speed"] = lerpf(previous_speed, target_speed, 1.0 - exp(-9.0 * dt))
+	boss["rotation"] = wrapf(float(boss["rotation"]) + (previous_speed + float(boss["rotation_speed"])) * .5 * dt, -PI, PI)
+	var velocity := (Vector2(boss["pos"]) - previous_position) / maxf(dt, .000001)
+	boss["bank"] = lerpf(float(boss["bank"]), clampf(-velocity.x / 1100.0, -.08, .08), 1.0 - exp(-2.0 * dt))
+	for blade in 6:
+		var target := .04 if entering else boss_opening_at(time - (blade % 3) * .075)
+		boss["blade_openings"][blade] = lerpf(float(boss["blade_openings"][blade]), target, 1.0 - exp(-(6.0 if entering else 13.0) * dt))
+	# Inner iris follows late, while the hub is geared down, so layers do not read as a rigid decal.
+	var iris_target := .04 if entering else boss_opening_at(time - .22)
+	boss["iris_opening"] = lerpf(float(boss["iris_opening"]), iris_target, 1.0 - exp(-8.0 * dt))
+	boss["iris_rotation"] = wrapf(float(boss["iris_rotation"]) + (.14 + float(boss["rotation_speed"]) * .53) * dt, -PI, PI)
+	boss["hub_rotation"] = wrapf(float(boss["hub_rotation"]) + (.10 + float(boss["rotation_speed"]) * .24) * dt, -PI, PI)
+
+## One fixed, cacheable curved scythe profile in hinge-local space.
+const BOSS_BLADE_TIP := Vector2(57,-12)
+static func boss_blade_polygon() -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in range(9):
+		var t := float(i)/8.0
+		points.append(Vector2(-5,-8)*(1-t)*(1-t) + Vector2(18,-34)*2*(1-t)*t + BOSS_BLADE_TIP*t*t)
+	for i in range(1,9):
+		var t := float(i)/8.0
+		points.append(BOSS_BLADE_TIP*(1-t)*(1-t) + Vector2(27,-18)*2*(1-t)*t + Vector2(8,13)*t*t)
+	points.append_array(PackedVector2Array([Vector2(1,14),Vector2(6,1)]))
+	return points
+
+## The full articulated transform is shared by drawing AND bullet birth positions.
+## Opening extends the root and swings its hinge; banking is part of this same transform.
+static func blade_transform(index: int, rotation: float, opening: float = .04, bank: float = 0.0) -> Transform2D:
+	var axis_angle := index * TAU / 6.0 - PI * .5 + rotation + bank
+	var root := Vector2.from_angle(axis_angle) * (54.0 + opening * 23.0)
+	var hinge := .76 - opening * .86
+	return Transform2D(axis_angle + hinge, root)
+
+static func blade_tip_offset(index: int, rotation: float, opening: float = .04, bank: float = 0.0) -> Vector2:
+	return blade_transform(index, rotation, opening, bank) * BOSS_BLADE_TIP
 
 func boss_blade_position(index: int) -> Vector2:
-	return Vector2(boss["pos"]) + blade_tip_offset(index, float(boss["rotation"]))
+	return Vector2(boss["pos"]) + blade_tip_offset(index, float(boss["rotation"]), float(boss["blade_openings"][index]), float(boss["bank"]))
 
 func _boss_fan(blade: int, angle: float, count: int, spacing: float, speed: float, color: Color, radius: float, kind: String, curve: float) -> void:
 	var origin := boss_blade_position(blade)

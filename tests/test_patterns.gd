@@ -183,7 +183,8 @@ func run():
 	for i in 60*9:
 		curved.step(1.0/60,Vector2.ZERO,false,false,false)
 		var speed: float = absf(curved.boss.rotation_speed)
-		if i>0 and absf(speed-previous_speed)>.05: smooth=false
+		# Stronger attack surges remain eased; compare acceleration, not an old timid speed step.
+		if i>0 and absf(speed-previous_speed)/(1.0/60.0)>16.0: smooth=false
 		slowest=minf(slowest,speed)
 		fastest=maxf(fastest,speed)
 		previous_speed=speed
