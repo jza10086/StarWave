@@ -65,7 +65,7 @@ func _aura_at(p: Vector2, radius: Vector2, col: Color) -> void:
 
 func _light_pass() -> void:
 	for e in core.enemies:
-		var col = Color("e9bf8f") if e.type=="gunner" else Color("b7a3df") if e.type=="weaver" else Color("df96ad")
+		var col = Color("eeb66c") if e.type=="gunner" else Color("af88e7") if e.type=="weaver" else Color("e67eaa")
 		_aura_at(e.pos,Vector2.ONE*e.radius*3.4,Color(col,.12))
 	if not core.boss.is_empty():
 		var p: Vector2 = core.boss.pos
@@ -74,8 +74,8 @@ func _light_pass() -> void:
 	for shot in core.shots: _aura_at(shot.pos,Vector2(13,30),Color(CYAN,.27))
 	for b in core.bullets:
 		var original: Color = b.get("color",Color("ff70c8"))
-		var col = Color("df96ad") if original.r>original.b else Color("c0ace7")
-		if original.g>.65 and original.r>.8: col=Color("f2c58e")
+		var col = Color("e67eaa") if original.r>original.b else Color("bc85f5")
+		if original.g>.65 and original.r>.8: col=Color("ffc16a")
 		_aura_at(b.pos,Vector2.ONE*b.get("radius",6)*3.4,Color(col,.09))
 	for pick in core.pickups: _aura_at(pick.pos,Vector2(42,42),Color(GOLD,.24))
 	if core.state!="lost":
@@ -190,7 +190,7 @@ func _poly(p: Vector2, radius: float, sides: int, angle: float = 0.0) -> PackedV
 	for i in range(sides): pts.append(p + Vector2.from_angle(angle + TAU*i/sides)*radius)
 	return pts
 
-# Filled vector artwork rasterized at 4x and linearly sampled. No contour strokes.
+# Colored luminous frames and deep continuous fills, rasterized at 4x. No black contours.
 # Keys are local geometry + palette only: movement never allocates textures.
 func _bleed_transparent_rgb(img: Image, col: Color) -> void:
 	# Transparent black leaks into RGB mip averages unless the entire padding is filled.
@@ -210,7 +210,9 @@ func _soft_polygon(pts: PackedVector2Array, col: Color) -> void:
 	var key = points+col.to_html(false)
 	if not shape_cache.has(key):
 		var size = bounds.size+Vector2.ONE*4
-		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"><defs><linearGradient id="v" x1="0" y1="0" x2="0.65" y2="1"><stop stop-color="#%s"/><stop offset="0.48" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></linearGradient></defs><polygon points="%s" fill="url(#v)"/></svg>' % [size.x,size.y,col.lightened(.32).to_html(false),col.to_html(false),col.darkened(.30).to_html(false),points]
+		# Explicit pixel-space coordinates avoid renderer-dependent objectBoundingBox units.
+		# Frame stays inside the original silhouette: clip the wide colored stroke.
+		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"><defs><linearGradient id="v" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="%s" y2="%s"><stop stop-color="#%s"/><stop offset="0.42" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></linearGradient><linearGradient id="rim" x1="0%%" y1="0%%" x2="65%%" y2="100%%"><stop stop-color="#%s"/><stop offset="0.45" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></linearGradient><clipPath id="shape"><polygon points="%s"/></clipPath></defs><polygon points="%s" fill="url(#v)"/><polygon points="%s" fill="none" stroke="url(#rim)" stroke-width="3.4" stroke-linejoin="round" clip-path="url(#shape)"/></svg>' % [size.x,size.y,size.x*.65,size.y,col.lightened(.12).to_html(false),col.darkened(.40).to_html(false),col.darkened(.82).to_html(false),col.lightened(.62).to_html(false),col.to_html(false),col.darkened(.18).to_html(false),points,points,points]
 		var img = Image.new()
 		img.load_svg_from_string(svg,4.0)
 		_bleed_transparent_rgb(img,col)
@@ -221,7 +223,8 @@ func _soft_polygon(pts: PackedVector2Array, col: Color) -> void:
 func _soft_orb(p: Vector2, r: float, col: Color) -> void:
 	var key = "orb"+col.to_html(false)
 	if not shape_cache.has(key):
-		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><defs><radialGradient id="v" cx="38%%" cy="28%%" r="80%%"><stop stop-color="#%s"/><stop offset="0.52" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#v)"/></svg>' % [col.lightened(.5).to_html(false),col.to_html(false),col.darkened(.18).to_html(false)]
+		# Bright colored perimeter, saturated interior, continuous radial ramp. Never black.
+		var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><defs><radialGradient id="v" cx="50%%" cy="50%%" r="50%%"><stop stop-color="#%s"/><stop offset="0.35" stop-color="#%s"/><stop offset="0.72" stop-color="#%s"/><stop offset="0.90" stop-color="#%s"/><stop offset="1" stop-color="#%s"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#v)"/></svg>' % [col.lightened(.48).to_html(false),col.to_html(false),col.darkened(.25).to_html(false),col.lightened(.30).to_html(false),col.lightened(.50).to_html(false)]
 		var img = Image.new()
 		img.load_svg_from_string(svg,4.0)
 		_bleed_transparent_rgb(img,col)
@@ -300,9 +303,9 @@ func _bullet(b: Dictionary) -> void:
 	if not Rect2(Vector2(8,8),FIELD-Vector2(16,16)).has_point(p): return
 	var r: float = b.get("radius",6)
 	var original: Color = b.get("color",Color("ff70c8"))
-	var col = Color("ed9eac") if original.r>original.b else Color("c0ace7")
-	if original.g>.65 and original.r>.8: col=Color("f2c58e")
-	# Solid circular body equals collision radius; no black border or luminous rim.
+	var col = Color("ff6c9e") if original.r>original.b else Color("bc85f5")
+	if original.g>.65 and original.r>.8: col=Color("ffc16a")
+	# Solid circular body equals collision radius; colored luminous rim, never a black border.
 	_soft_orb(p,r,col)
 
 func _diamond(p: Vector2, radius: float, color: Color) -> void:
@@ -313,13 +316,14 @@ func _enemy(e: Dictionary) -> void:
 	if not Rect2(Vector2(-150,-150),FIELD+Vector2(300,300)).has_point(p): return
 	var kind: String = e.get("type","scout")
 	var r: float = e.get("radius",19)
-	var col = Color("e9bf8f") if kind=="gunner" else Color("b7a3df") if kind=="weaver" else Color("df96ad")
-	if float(e.get("flash",0))>0: col=Color("f3dce7")
+	var col = Color("eeb66c") if kind=="gunner" else Color("af88e7") if kind=="weaver" else Color("e67eaa")
+	if float(e.get("flash",0))>0: col=Color("d8a4f1")
 	if float(e.get("telegraph",0))>0:
 		_trail(p+Vector2(0,r),Vector2.DOWN,110,8,Color(col,.12))
 	if kind=="boss":
-		col=Color("b4a0d5") if float(e.get("flash",0))<=0 else Color("f3dce7")
+		col=Color("ac83dc") if float(e.get("flash",0))<=0 else Color("d8a4f1")
 		_soft_polygon(_poly(p,r,6,PI/6),col)
+		_soft_polygon(_poly(p,r*.65,6,PI/6),col.darkened(.18))
 		for side in [-1,1]:
 			var wing = p+Vector2(side*(r+36),7)
 			_soft_polygon(PackedVector2Array([p+Vector2(side*40,-8),wing+Vector2(0,-10),wing+Vector2(0,10),p+Vector2(side*40,10)]),col.darkened(.2))
@@ -346,7 +350,7 @@ func _player() -> void:
 	for side in [-1,1]:
 		_trail(p+Vector2(side*13,12),Vector2.DOWN,flame,6,Color(CYAN,alpha*.40))
 	var pts=PackedVector2Array([p+Vector2(0,-27),p+Vector2(10,-3),p+Vector2(26,17),p+Vector2(9,11),p+Vector2(0,17),p+Vector2(-9,11),p+Vector2(-26,17),p+Vector2(-10,-3)])
-	_soft_polygon(pts,Color("8bd5d2")*Color(1,1,1,alpha))
+	_soft_polygon(pts,Color("64d2d9")*Color(1,1,1,alpha))
 	_soft_polygon(PackedVector2Array([p+Vector2(0,-17),p+Vector2(4,-2),p+Vector2(0,6),p+Vector2(-4,-2)]),Color("507e9a")*Color(1,1,1,alpha))
 	if core.focused: _soft_orb(p,4,Color("ffffff"))
 
@@ -389,7 +393,7 @@ func _overlay() -> void:
 		title = "防线守住了"; sub = "M I S S I O N   C L E A R"; body = "最终得分  %08d" % core.score; action = "再次出击  /  ENTER"
 	elif core.state == "lost":
 		title = "信号中断"; sub = "S I G N A L   L O S T"; body = "最终得分  %08d  ·  再试一次。" % core.score; action = "重新出击  /  ENTER"
-	_soft_polygon(_poly(Vector2(720,260),48,6,PI/6),Color("8bd5d2"))
+	_soft_polygon(_poly(Vector2(720,260),48,6,PI/6),Color("64d2d9"))
 	_soft_orb(Vector2(720,260),12,GOLD)
 	_center(Vector2(720,375),title,53,Color("f3f2df"))
 	_center(Vector2(720,420),sub,20,CYAN)

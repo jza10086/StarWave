@@ -1,5 +1,5 @@
 extends SceneTree
-## No-outline style contract plus rendering-independent gameplay invariants.
+## No-black-outline style contract plus rendering-independent gameplay invariants.
 ## Actual pixels and input interruption flows are verified by capture_gradient.gd.
 var checks := 0
 var failures := 0
@@ -28,7 +28,7 @@ func run():
 		check(body.contains("load_svg_from_string(svg,4.0)"), name + " high-resolution 4x rasterization")
 		check(body.contains("generate_mipmaps()"), name + " minification mipmaps")
 		check(body.find("_bleed_transparent_rgb(img,col)") >= 0 and body.find("_bleed_transparent_rgb(img,col)") < body.find("generate_mipmaps()"), name + " transparent RGB bleed before minification")
-		check(not body.contains("stroke="), name + " no SVG stroke")
+		check(not body.contains('stroke="#000'), name + " no black SVG stroke")
 		check(body.contains("shape_cache.has(key)"), name + " reused texture cache")
 	check(function_body(source,"_soft_orb").contains('<circle cx="32" cy="32" r="30"'), "analytic circular bullet silhouette, no faceted core")
 	check(function_body(source,"_soft_orb").contains("r*32.0/30.0"), "opaque circle maps to unchanged collision radius")

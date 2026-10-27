@@ -58,6 +58,26 @@ func run():
 				edge_alpha = edge_alpha or (a > 0.0 and a < 1.0)
 		check(edge_alpha, "orb boundary has antialiased coverage")
 	check(orb_textures > 0, "real render created orb texture cache")
+	# Test rendered SVG bytes rather than merely looking for gradient code.
+	var polygon_textures := 0
+	for cache_key in app.shape_cache:
+		if str(cache_key).begins_with("orb"): continue
+		var tex: Image = app.shape_cache[cache_key].get_image()
+		if tex.get_width() < 160 or tex.get_height() < 160: continue
+		polygon_textures += 1
+		var lo := 1.0
+		var hi := 0.0
+		var levels := {}
+		for y in range(int(tex.get_height()*.20),int(tex.get_height()*.80)):
+			var pixel := tex.get_pixel(tex.get_width()/2,y)
+			if pixel.a < .99: continue
+			var value := maxf(pixel.r,maxf(pixel.g,pixel.b))
+			lo = minf(lo,value)
+			hi = maxf(hi,value)
+			levels[int(value*255)] = true
+		check(hi-lo > .12, "rendered polygon has visible interior gradient range")
+		check(levels.size() > 24, "rendered polygon has continuous interior gradient levels")
+	check(polygon_textures > 0, "real render sampled polygon gradients")
 	key(KEY_P)
 	check(app.paused,"pause P")
 	await snap("04-pause")
