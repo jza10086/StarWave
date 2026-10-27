@@ -82,8 +82,11 @@ func run():
 		check(e.type == kind and e.hp > 0,"new role spawn "+kind)
 		advance(c,1.0)
 		check(e.pos.is_finite(),"finite role movement "+kind)
-		advance(c,6.0)
-		check(c.bullets.size() > 0,"role emits bullets "+kind)
+		var emitted := false
+		for frame in 360:
+			c.step(1.0/60,Vector2.ZERO,false,false,false)
+			if not c.bullets.is_empty(): emitted=true
+		check(emitted,"role emits bullets during attack stage "+kind)
 		check(c.bullets.size() < 120,"role bounded burst "+kind)
 		c.bullets.clear()
 		c._enemy_fire(e)
@@ -116,14 +119,14 @@ func run():
 	locked.start()
 	locked._boss_spawned = true
 	locked._spawn_enemy("sniper",Vector2(720,210),0)
-	advance(locked,.75)
+	advance(locked,2.3)
 	var enemy: Dictionary = locked.enemies[0]
 	var angle: float = enemy.warning_angle
 	check(enemy.telegraph > 0 and locked.bullets.is_empty(),"sniper warning precedes emission")
 	locked.player.x = 1100
 	advance(locked,.25)
 	check(enemy.warning_angle==angle,"sniper aim does not track during warning")
-	advance(locked,.5)
+	advance(locked,.65)
 	check(not locked.bullets.is_empty() and absf(locked.bullets[1].vel.angle()-angle)<.001,"sniper shoots locked aim")
 	var roles = Core.new()
 	roles.start()
@@ -131,6 +134,9 @@ func run():
 		roles.enemies.clear()
 		roles.bullets.clear()
 		roles._spawn_enemy(kind,Vector2(720,210),0)
+		roles.enemies[0]["age"] = 3.0
+		roles.enemies[0]["stage"] = "attack"
+		roles.enemies[0]["attack_allowed"] = true
 		roles._enemy_fire(roles.enemies[0])
 		var gap := true
 		for bullet in roles.bullets:

@@ -82,7 +82,7 @@ func run():
 	c=fresh()
 	for i in range(2000): c._add_bullet(Vector2(100,100),Vector2.ZERO,5,Color.WHITE)
 	check(c.bullets.size()==900,"bullet cap")
-	for bullet in c.bullets: bullet.age=16.1
+	for bullet in c.bullets: bullet.age=28.1
 	tick(c,.01); check(c.bullets.is_empty(),"expired bullet cleanup")
 	c.debug_set_boss(3); c.invulnerable=999; tick(c,60)
 	check(c.bullets.size()<=900 and c.effects.size()<=90 and c.shots.size()<=220,"long dense boss bounds")

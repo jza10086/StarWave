@@ -80,8 +80,8 @@ func _run() -> void:
 	c.debug_set_boss()
 	tick(c, 0.8)
 	check(c.bullets.is_empty(), "boss opening has no surprise bullets")
-	tick(c, 1.0)
-	check(c.bullets.size() > 0, "boss starts patterned fire after telegraph")
+	tick(c, 2.1)
+	check(c.bullets.size() > 0, "boss starts patterned fire after entry and reposition")
 	c.boss["hp"] = 1550.0
 	c.step(0.01, Vector2.ZERO, false, false, false)
 	check(c.boss["phase"] == 2 and c.bullets.is_empty() and c.boss["telegraph"] > 1.7, "phase two clears field and telegraphs")

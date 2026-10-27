@@ -312,8 +312,17 @@ func _bullet(b: Dictionary) -> void:
 	if absf(float(b.get("angular_velocity",0.0))) > .00001:
 		_curve_wake(b,Color(col,.34))
 	else:
-		_ribbon(p,dir,66.0 if needle else 44.0,r*1.65,Color(col,.34),-1.0 if col.g>.5 else 1.0)
+		var age: float = b.get("age",0.0)
+		var past := maxf(0.0,age-.36)
+		var length: float = Vector2(b.vel).length()*(age-past)
+		if b.has("speed_start"):
+			length = Core.bullet_travel_at(b,age)-Core.bullet_travel_at(b,past)
+		_trail(p,dir,length,r*.85,Color(col,.34))
 	_soft_orb(p,r,col)
+	if b.get("kind", "") == "crescent":
+		# The filled disc is the collision core; this fine crescent is decoration only.
+		var heading := (-dir).angle()
+		_sigil_arc(p,r*1.65,heading-PI*.58,heading+PI*.58,Color(col,.65),1.1)
 	if needle:
 		_glyph_edge(PackedVector2Array([p+dir*r*2.4,p+dir.orthogonal()*r,p-dir*r*1.3,p-dir.orthogonal()*r]),Color(col,.85),.9)
 
@@ -352,7 +361,7 @@ func _enemy(e: Dictionary) -> void:
 	if float(e.get("flash",0))>0: col=col.lightened(.35)
 	# Rotate a fixed local-space assembly, never regenerate geometry each frame.
 	# Simulation owns the angle: pause freezes it and collision remains at world.
-	draw_set_transform(world, float(e.get("rotation",0.0)) if kind=="boss" else 0.0)
+	draw_set_transform(world, float(e.get("rotation",0.0)))
 	var p := Vector2.ZERO
 	if kind=="boss":
 		col=Color("b184ff") if float(e.get("flash",0))<=0 else Color("e6bfff")

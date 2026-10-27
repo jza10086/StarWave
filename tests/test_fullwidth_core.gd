@@ -22,16 +22,19 @@ func run():
 	for variant in range(1,12):
 		c.enemies.clear()
 		c._spawn_wave(variant)
-		var min_x := 99999.0
-		var max_x := 0.0
+		var min_x := INF
+		var max_x := -INF
 		for e in c.enemies:
-			min_x = minf(min_x, e.pos.x)
-			max_x = maxf(max_x, e.pos.x)
-			check(e.pos.x >= 32 and e.pos.x <= c.field_size.x - 32, "formation within full field")
+			check(e.pos.x >= -80 and e.pos.x <= c.field_size.x + 80, "formation enters within bounded outer margin")
+			for sample in 32 if e.type=="sniper" else 43:
+				var pos: Vector2=c.enemy_route_position(e,2.1+sample*.1)
+				min_x=minf(min_x,pos.x)
+				max_x=maxf(max_x,pos.x)
+				check(pos.x >= 20 and pos.x <= c.field_size.x-20,"attack route stays inside full field")
 		if c.enemies.size() >= 3:
-			check(min_x <= 360 and max_x >= 1080, "mixed formations cover full field wings")
+			check(min_x <= c.field_size.x*.4 and max_x >= c.field_size.x*.6,"mixed routes cover both field wings")
 		else:
-			check(min_x >= 360 and max_x <= 1080, "teaching singles stay in readable central lanes")
+			check(max_x-min_x>20,"teaching roles have a readable moving route")
 	c.debug_set_boss(3)
 	c._add_bullet(Vector2(1100,600),Vector2(150,50),6,Color.WHITE)
 	c._spawn_enemy("weaver",Vector2(200,300),0)
@@ -52,7 +55,7 @@ func run():
 	c.boss.choreography_slot = 0
 	c.boss.cycle_time = 0.0
 	c.player = Vector2(1360,850)
-	for i in 36: c.step(1.0/60,Vector2.ZERO,false,false,false)
+	for i in 110: c.step(1.0/60,Vector2.ZERO,false,false,false)
 	var aimed := false
 	for b in c.bullets:
 		if b.kind == "needle" and b.vel.x > 0: aimed = true
