@@ -1,0 +1,64 @@
+{
+  "manifest_version": 2,
+  "core_api_major": 4,
+  "package_version": "1.0.0",
+  "id": "godot_party_default_star_wave",
+  "name": "GodotPartyDefault · 星潮",
+  "kind": "minigame",
+  "entry": "game.tscn",
+  "player_counts": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "tags": [
+    "original"
+  ],
+  "dependencies": {
+    "godot_party_default_protocol": "1.0.0"
+  },
+  "adapters": [
+    {
+      "id": "standard",
+      "protocol": {
+        "id": "godot_party_default_protocol",
+        "api_major": 1,
+        "min_api_minor": 0
+      },
+      "entry": "adapter.gd"
+    }
+  ],
+  "config_schema": "settings.gd",
+  "streams": {
+    "state": {
+      "mode": "reliable",
+      "audience": "instance"
+    },
+    "private_view": {
+      "mode": "reliable",
+      "audience": "instance"
+    },
+    "cursors": {
+      "mode": "ordered",
+      "audience": "instance"
+    }
+  },
+  "player_count_rules": [
+    {
+      "when": {
+        "mode": "团队赛"
+      },
+      "counts": [
+        2,
+        4,
+        6,
+        8
+      ]
+    }
+  ],
+  "introduction": "个人赛 2–8 人同一战场；团队赛 2/4/6/8 人分为两个独立战场，以全队生存时长排名。"
+}
