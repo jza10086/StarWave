@@ -8,14 +8,18 @@ var survival: float = 0.0
 var cleared: bool = false
 var cycle: int = 0
 var feedback_sequence: int = 0
+# Display-only positions survive authoritative snapshot replacement.
+var pilot_draw_positions: Dictionary = {}
 
 func configure(roster: Array, team: bool) -> void:
 	start()
 	team_mode = team
 	pilots.clear()
+	pilot_draw_positions.clear()
 	for index: int in roster.size():
 		var entry: Dictionary = roster[index]
 		pilots[entry.id] = {"name": entry.name, "color": entry.color, "pos": Vector2(FIELD.x * (index + 1) / (roster.size() + 1), FIELD.y - 150), "lives": 3, "bombs": 3, "power": 1, "invulnerable": 1.8, "timer": 0.0, "score": 0, "kills": 0, "hurt": 0, "boss_damage": 0.0, "move": Vector2.ZERO, "fire": false, "focus": false, "bomb": false, "latch": false, "last_input": 0.0}
+		pilot_draw_positions[entry.id] = pilots[entry.id].pos
 
 ## Advance only a received display copy between 10 Hz snapshots.
 ## No spawning, collision, damage, rewards or gameplay timers run on this path.
@@ -50,6 +54,30 @@ func advance_presentation(dt: float) -> void:
 	_update_effects(dt)
 	_update_damage_waves(dt)
 	_update_cancel_effects(dt)
+
+## A snapshot updates simulation targets, never teleports an existing displayed pilot.
+func receive_pilots(snapshot_pilots: Dictionary) -> void:
+	pilots = snapshot_pilots
+	for id: String in pilots:
+		if not pilot_draw_positions.has(id):
+			pilot_draw_positions[id] = pilots[id].pos
+
+## Follow current local input immediately; bound reconciliation below even focus speed.
+## The caller applies the same 150 ms prediction horizon as the rest of the arena.
+func advance_pilots(dt: float, local_id: String, movement: Vector2, focus: bool) -> void:
+	if state != "playing":
+		return
+	for id: String in pilots:
+		var pilot: Dictionary = pilots[id]
+		if pilot.lives <= 0:
+			continue
+		pilot.invulnerable = maxf(0.0, float(pilot.invulnerable) - dt)
+		var direction: Vector2 = movement if id == local_id else Vector2(pilot.move)
+		var slow: bool = focus if id == local_id else bool(pilot.focus)
+		var displacement: Vector2 = direction * (FOCUS_SPEED if slow else PLAYER_SPEED) * dt
+		pilot.pos = (Vector2(pilot.pos) + displacement).clamp(Vector2(24, 90), FIELD - Vector2(24, 34))
+		var displayed: Vector2 = (Vector2(pilot_draw_positions[id]) + displacement).clamp(Vector2(24, 90), FIELD - Vector2(24, 34))
+		pilot_draw_positions[id] = displayed.move_toward(pilot.pos, 80.0 * dt)
 
 func set_input(id: String, data: Dictionary) -> void:
 	if not pilots.has(id) or pilots[id].lives <= 0:
@@ -107,14 +135,32 @@ func advance(dt: float) -> void:
 	for bullet: Dictionary in bullets:
 		bullet["previous"] = bullet.pos
 	_update_bullets(dt)
-	for index: int in range(bullets.size() - 1, -1, -1):
-		var bullet: Dictionary = bullets[index]
-		for id: String in alive:
-			var pilot: Dictionary = pilots[id]
-			if pilot.lives > 0 and pilot.invulnerable <= 0 and _segment_distance_squared(pilot.pos, bullet.get("previous", bullet.pos), bullet.pos) < pow(float(bullet.radius) + PLAYER_RADIUS, 2):
-				hurt(id)
-				bullets.remove_at(index)
-				break
+	var collidable: Array[String] = []
+	var pilot_bounds: Rect2
+	for id: String in alive:
+		if pilots[id].invulnerable <= 0.0:
+			if collidable.is_empty():
+				pilot_bounds = Rect2(pilots[id].pos, Vector2.ZERO)
+			else:
+				pilot_bounds = pilot_bounds.expand(pilots[id].pos)
+			collidable.append(id)
+	if not collidable.is_empty():
+		for index: int in range(bullets.size() - 1, -1, -1):
+			var bullet: Dictionary = bullets[index]
+			var current: Vector2 = bullet.pos
+			var previous: Vector2 = bullet.previous
+			var radius: float = float(bullet.radius) + PLAYER_RADIUS
+			var bounds: Rect2 = Rect2(previous, Vector2.ZERO).expand(current).grow(radius)
+			if not bounds.intersects(pilot_bounds, true):
+				continue
+			for id: String in collidable:
+				var pilot: Dictionary = pilots[id]
+				if pilot.lives <= 0 or pilot.invulnerable > 0 or not bounds.has_point(pilot.pos):
+					continue
+				if _segment_distance_squared(pilot.pos, previous, current) < radius * radius:
+					hurt(id)
+					bullets.remove_at(index)
+					break
 	for id: String in alive:
 		var pilot: Dictionary = pilots[id]
 		if pilot.lives <= 0 or pilot.invulnerable > 0:

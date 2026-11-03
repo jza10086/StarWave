@@ -769,20 +769,21 @@ func _update_bullets(dt: float) -> void:
 				_cancel_bullet(bullet, previous.lerp(pos, contact["time"]), contact["origin"], dt * (1.0-contact["time"]))
 				bullets.remove_at(i)
 				continue
-		var distance: float = _segment_distance_squared(player, previous, pos)
-		var radius: float = bullet["radius"]
-		if invulnerable <= 0.0 and distance < pow(radius + PLAYER_RADIUS, 2.0):
-			var hit_origin: Variant = player
-			_hit_player()
-			# The striking bullet is harmless immediately, not one visual frame later.
-			_cancel_bullet(bullet, hit_origin, hit_origin, 0.0)
-			bullets.remove_at(i)
-			if state != "playing": return
-			continue
-		if not bool(bullet.get("grazed", false)) and invulnerable <= 0.0 and distance < pow(radius + 25.0, 2.0):
-			bullet["grazed"] = true
-			graze += 1
-			score += 20
+		if invulnerable <= 0.0:
+			var distance: float = _segment_distance_squared(player, previous, pos)
+			var radius: float = bullet["radius"]
+			if distance < pow(radius + PLAYER_RADIUS, 2.0):
+				var hit_origin: Variant = player
+				_hit_player()
+				# The striking bullet is harmless immediately, not one visual frame later.
+				_cancel_bullet(bullet, hit_origin, hit_origin, 0.0)
+				bullets.remove_at(i)
+				if state != "playing": return
+				continue
+			if not bool(bullet.get("grazed", false)) and distance < pow(radius + 25.0, 2.0):
+				bullet["grazed"] = true
+				graze += 1
+				score += 20
 		if pos.x < -70.0 or pos.x > field_size.x + 70.0 or pos.y < -150.0 or pos.y > field_size.y + 70.0 or float(bullet["age"]) > clampf(field_size.y / maxf(75.0, velocity.length()) + 4.0, 16.0, 28.0):
 			bullets.remove_at(i)
 			continue

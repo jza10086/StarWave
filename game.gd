@@ -7,6 +7,7 @@ var display_models: Array[RefCounted] = []
 var team_by_player: Dictionary = {}
 var accumulated: float = 0.0
 var input_clock: float = 0.0
+var previous_action: Dictionary = {}
 var team_mode: bool = false
 var previous_local: Dictionary = {}
 var rendered_sequence: int = -1
@@ -62,10 +63,14 @@ func start_game() -> void:
 	_select_views()
 
 func tick_game(delta: float) -> void:
+	var movement: Vector2 = api.input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down")
+	var focus: bool = api.input.is_pressed(&"star_focus")
+	var action: Dictionary = {"move": movement, "fire": not api.input.input_blocked and get_window().has_focus() and (bool(api.config.get_own(&"auto_fire", true)) or api.input.is_pressed(&"star_fire")), "focus": focus, "bomb": api.input.is_pressed(&"star_bomb")}
 	input_clock += delta
-	if input_clock >= 0.033:
-		input_clock = 0
-		send_action({"move": api.input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down"), "fire": not api.input.input_blocked and get_window().has_focus() and (bool(api.config.get_own(&"auto_fire", true)) or api.input.is_pressed(&"star_fire")), "focus": api.input.is_pressed(&"star_focus"), "bomb": api.input.is_pressed(&"star_bomb")})
+	if action != previous_action or input_clock >= 0.033:
+		input_clock = 0.0
+		previous_action = action
+		send_action(action)
 	if api.is_host():
 		accumulated += delta
 		while accumulated >= 1.0 / 120.0:
@@ -93,15 +98,7 @@ func tick_game(delta: float) -> void:
 				var step: float = minf(remaining, 1.0 / 120.0)
 				model.advance_presentation(step)
 				remaining -= step
-			for pilot_id: String in model.pilots:
-				var pilot: Dictionary = model.pilots[pilot_id]
-				if pilot.lives <= 0:
-					continue
-				pilot.invulnerable = maxf(0.0, float(pilot.invulnerable) - presentation_delta)
-				var movement: Vector2 = pilot.move
-				if pilot_id == local_id:
-					movement = api.input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down")
-				pilot.pos = (Vector2(pilot.pos) + movement * (155 if pilot.focus else 350) * presentation_delta).clamp(Vector2(24, 90), Vector2(1416, 926))
+			model.advance_pilots(presentation_delta, local_id, movement, focus)
 			for collection: Array in [model.bullets, model.shots]:
 				for projectile: Dictionary in collection:
 					projectile.pos += Vector2(projectile.vel) * presentation_delta
@@ -134,7 +131,10 @@ func render_game() -> void:
 	for index: int in decoded.size():
 		var snap: Dictionary = decoded[index]
 		for key: String in snap:
-			display_models[index].set(key, snap[key])
+			if key == "pilots":
+				display_models[index].receive_pilots(snap.pilots)
+			else:
+				display_models[index].set(key, snap[key])
 		displays[index].muted = not bool(api.config.get_own(&"sound", true))
 		displays[index].consume_feedback(snap.effects)
 		for id: String in snap.pilots:

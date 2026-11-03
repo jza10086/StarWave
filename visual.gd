@@ -23,6 +23,9 @@ var shape_cache: Dictionary = {}
 var hit_white: float = 0.0
 var aura: ImageTexture
 var beam: ImageTexture
+var shot_heads: MultiMesh
+var ribbons: MultiMesh
+var ribbon_count: int = 0
 var energy_ring: ImageTexture
 var light_canvas: Node2D
 var space_canvas: ColorRect
@@ -162,9 +165,13 @@ func _light_pass() -> void:
 		if original.g>.65 and original.r>.8: col=Color("ffc16a")
 		_aura_at(b.pos,Vector2.ONE*b.get("radius",6)*3.4,Color(col,.09))
 	for pick: Variant in core.pickups: _aura_at(pick.pos,Vector2(42,42),Color(GOLD,.24))
-	if core.state!="lost":
-		_aura_at(core.player,Vector2(65,65),Color(CYAN,.18))
-		_aura_at(core.player+Vector2(0,34),Vector2(40,70),Color(.15,.45,1,.22))
+	for id: String in core.pilots:
+		var pilot: Dictionary = core.pilots[id]
+		if pilot.lives <= 0:
+			continue
+		var position_value: Vector2 = core.pilot_draw_positions[id]
+		_aura_at(position_value, Vector2(65, 65), Color(Color(pilot.color), 0.18))
+		_aura_at(position_value + Vector2(0, 34), Vector2(40, 70), Color(0.15, 0.45, 1, 0.22))
 	for effect: Variant in feedback_effects:
 		var a: Variant = clampf(1.0-effect.get("age",0)/maxf(effect.get("life",.5),.001),0,1)
 		_aura_at(effect.pos,Vector2.ONE*effect.get("radius",24)*3,Color(CYAN,a*.28))
@@ -178,6 +185,8 @@ func _ready() -> void:
 			base, base + 5, base + 3, base, base + 2, base + 5]))
 	trail_indices = curve_indices.slice(0, 96)
 	_setup_lighting()
+	_setup_ribbons()
+	_setup_shot_heads()
 	audio = AudioStreamPlayer.new()
 	audio.volume_db = -18
 	add_child(audio)
@@ -284,15 +293,17 @@ func _space() -> void:
 		draw_texture_rect(aura,Rect2(pos-Vector2.ONE*2.5,Vector2.ONE*5),false,Color(.68,.73,.88,.22+float(i%3)*.08))
 
 func _field() -> void:
+	ribbon_count = 0
 	_space()
-	for shot: Variant in core.shots:
+	var shot_count: int = 0
+	for shot: Dictionary in core.shots:
 		var p: Vector2 = shot.pos
-		if not Rect2(Vector2(5,0),FIELD-Vector2(10,0)).has_point(p): continue
-		_ribbon(p+Vector2(0,4),Vector2.DOWN,80,8,Color(CYAN,.42),sin(p.x*.07))
-		# White-cyan sliver glyph: the same narrow shot center, not a bead or a laser rod.
-		var head: Variant = PackedVector2Array([p+Vector2(0,-12),p+Vector2(3,0),p+Vector2(0,7),p+Vector2(-3,0)])
-		draw_colored_polygon(head,Color("c5fff8"))
-		_glyph_edge(head,Color("efffff"),.7)
+		if not Rect2(Vector2(5, 0), FIELD - Vector2(10, 0)).has_point(p):
+			continue
+		_ribbon(p + Vector2(0, 4), Vector2.DOWN, 80, 8, Color(CYAN, 0.42), sin(p.x * 0.07))
+		shot_heads.set_instance_transform_2d(shot_count, Transform2D(0.0, p))
+		shot_count += 1
+	shot_heads.visible_instance_count = shot_count
 
 	for e: Variant in core.enemies: _enemy(e)
 	if not core.boss.is_empty() and float(core.boss.hp) > 0.0: _enemy(core.boss)
@@ -312,13 +323,14 @@ func _field() -> void:
 		RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), curve_batch_indices.slice(0, index_count), curve_points, curve_colors)
 	for bullet: Dictionary in core.bullets:
 		_bullet(bullet)
-	for pilot: Dictionary in core.pilots.values():
+	for id: String in core.pilots:
+		var pilot: Dictionary = core.pilots[id]
 		if pilot.lives <= 0: continue
-		core.player = pilot.pos
+		core.player = core.pilot_draw_positions[id]
 		core.invulnerable = pilot.invulnerable
-		_player()
-		draw_arc(pilot.pos, 26, 0, TAU, 24, Color.WHITE, 5, true)
-		draw_arc(pilot.pos, 26, 0, TAU, 24, Color(pilot.color), 3, true)
+		core.focused = pilot.focus
+		_player(Color(pilot.color))
+	ribbons.visible_instance_count = ribbon_count
 
 	if bomb_flash > 0:
 		draw_rect(Rect2(Vector2.ZERO,FIELD),Color(.3,1,.93,bomb_flash*.10))
@@ -562,15 +574,15 @@ func _enemy(e: Dictionary) -> void:
 	hit_white = 0.0
 	draw_set_transform(ORIGIN)
 
-func _player() -> void:
+func _player(color: Color) -> void:
 	var p: Vector2 = core.player
 	if core.state=="lost": return
 	var alpha: Variant = .45 if core.invulnerable>0 and sin(visual_time*25)>0 else 1.0
 	for side: Variant in [-1,1]:
-		_ribbon(p+Vector2(side*10,12),Vector2.DOWN,65,9,Color(CYAN,alpha*.32),side*.8)
+		_ribbon(p+Vector2(side*10,12),Vector2.DOWN,65,9,Color(color,alpha*.32),side*.8)
 		var wing: Variant = PackedVector2Array([p+Vector2(side*4,-13),p+Vector2(side*25,17),p+Vector2(side*7,8),p+Vector2(side*3,17)])
-		_soft_polygon(wing,Color(CYAN,alpha))
-	_soft_polygon(PackedVector2Array([p+Vector2(0,-27),p+Vector2(5,-5),p+Vector2(0,5),p+Vector2(-5,-5)]),Color(CYAN.lightened(.6),alpha))
+		_soft_polygon(wing,Color(color,alpha))
+	_soft_polygon(PackedVector2Array([p+Vector2(0,-27),p+Vector2(5,-5),p+Vector2(0,5),p+Vector2(-5,-5)]),Color(color.lightened(.6),alpha))
 	if core.focused: _soft_orb(p,4,Color("ffffff"))
 
 func _hud() -> void:
@@ -658,26 +670,88 @@ func _field_arc(p: Vector2, radius: float, color: Color, width: float) -> void:
 		var b: Variant = p + Vector2.from_angle((i+1)*TAU/100)*radius
 		if bounds.has_point(a) and bounds.has_point(b): draw_line(a,b,color,width,true)
 
-# All curves are presentation-only, bounded (12 segments) and allocation-free of textures.
+## The narrow shot glyph and its bright rim share a fixed mesh, including all outlines.
+func _setup_shot_heads() -> void:
+	var points: PackedVector2Array = PackedVector2Array([Vector2(0, -12), Vector2(3, 0), Vector2(0, 7), Vector2(-3, 0)])
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var colors: PackedColorArray = PackedColorArray()
+	var indices: PackedInt32Array = PackedInt32Array([4, 5, 6, 4, 6, 7])
+	for layer: int in 2:
+		for point: Vector2 in points:
+			vertices.append(Vector3(point.x, point.y, 0) * (1.0 if layer == 0 else 0.82))
+			colors.append(Color("efffff") if layer == 0 else Color("c5fff8"))
+	for edge: int in 4:
+		var next: int = (edge + 1) % 4
+		indices.append_array(PackedInt32Array([edge, next, next + 4, edge, next + 4, edge + 4]))
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	shot_heads = MultiMesh.new()
+	shot_heads.transform_format = MultiMesh.TRANSFORM_2D
+	shot_heads.mesh = mesh
+	shot_heads.instance_count = Core.MAX_SHOTS * 8
+	shot_heads.visible_instance_count = 0
+	shot_heads.custom_aabb = AABB(Vector3(-20, -20, -1), Vector3(1480, 1000, 2))
+	var canvas: MultiMeshInstance2D = MultiMeshInstance2D.new()
+	canvas.multimesh = shot_heads
+	canvas.z_index = -1
+	add_child(canvas)
+
+## Build the four feathered strips once; the GPU bends each instance independently.
+func _setup_ribbons() -> void:
+	var vertices: PackedVector3Array = PackedVector3Array()
+	var colors: PackedColorArray = PackedColorArray()
+	var uvs: PackedVector2Array = PackedVector2Array()
+	var indices: PackedInt32Array = PackedInt32Array()
+	for layer: int in 2:
+		for side: float in [-1.0, 1.0]:
+			var base: int = vertices.size()
+			for sample_index: int in 13:
+				var progress: float = float(sample_index) / 12.0
+				var center: float = layer * 0.35 * progress
+				var edge: float = center + side * (1.0 - progress) * (0.82 if layer == 0 else 0.38)
+				vertices.append(Vector3(center, progress, 0))
+				vertices.append(Vector3(edge, progress, 0))
+				uvs.append(Vector2(0, progress))
+				uvs.append(Vector2(1, progress))
+				colors.append(Color(1, 1, 1, pow(1.0 - progress, 1.4) * (0.8 if layer == 0 else 0.48)))
+				colors.append(Color(1, 1, 1, 0))
+			for segment: int in 12:
+				var index: int = base + segment * 2
+				indices.append_array(PackedInt32Array([index, index + 2, index + 3, index, index + 3, index + 1]))
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	ribbons = MultiMesh.new()
+	ribbons.transform_format = MultiMesh.TRANSFORM_2D
+	ribbons.use_colors = true
+	ribbons.use_custom_data = true
+	ribbons.mesh = mesh
+	ribbons.instance_count = Core.MAX_SHOTS * 8 + 16
+	ribbons.visible_instance_count = 0
+	ribbons.custom_aabb = AABB(Vector3(-160, -160, -1), Vector3(1760, 1280, 2))
+	var canvas: MultiMeshInstance2D = MultiMeshInstance2D.new()
+	canvas.multimesh = ribbons
+	canvas.z_index = -1
+	var material: ShaderMaterial = ShaderMaterial.new()
+	material.shader = preload("res://games/minigame/godot_party_default_star_wave/assets/shaders/ribbon.gdshader")
+	canvas.material = material
+	add_child(canvas)
+
 func _ribbon(p: Vector2, dir: Vector2, length: float, width: float, col: Color, curl: float = 1.0) -> void:
-	var side: Variant = dir.orthogonal()
-	# Four strips instead of 24 per-segment draw calls; the center stays luminous
-	# while both outside edges and the tail decay to zero alpha.
-	for layer: Variant in range(2):
-		for sign_side: Variant in [-1,1]:
-			var pts: Variant = PackedVector2Array()
-			var colors: Variant = PackedColorArray()
-			for i: Variant in range(13):
-				var t: Variant = float(i)/12
-				var center: Variant = p+dir*length*t+side*(sin(t*PI)*width*curl+layer*width*.35*t)
-				pts.append(center)
-				colors.append(Color(col,col.a*pow(1-t,1.4)*(.8 if layer==0 else .48)))
-			for i: Variant in range(12,-1,-1):
-				var t: Variant = float(i)/12
-				var center: Variant = p+dir*length*t+side*(sin(t*PI)*width*curl+layer*width*.35*t)
-				pts.append(center+side*sign_side*width*(1-t)*(.82 if layer==0 else .38))
-				colors.append(Color(col,0))
-			draw_polygon(pts,colors)
+	ribbons.set_instance_transform_2d(ribbon_count, Transform2D(dir.orthogonal() * width, dir * length, p))
+	ribbons.set_instance_color(ribbon_count, col)
+	ribbons.set_instance_custom_data(ribbon_count, Color(curl, 0, 0, 0))
+	ribbon_count += 1
 
 func _glyph_edge(pts: PackedVector2Array, col: Color, width: float = 1.3, closed: bool = true) -> void:
 	draw_polyline(pts+PackedVector2Array([pts[0]]) if closed else pts,col,width,true)

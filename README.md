@@ -6,6 +6,12 @@
 
 战斗反馈参考 [《AI做游戏没手感？教你12招提升打击感》](https://www.bilibili.com/video/BV1Qixc6oE2s/)：命中闪白、模型轻微回弹与挤压、合并同批命中的实际伤害飘字、火花、击破冲击环和分层音效。回弹仅改变显示，不改变碰撞和轨迹。反馈事件由主机编号，客户端去重后逐帧播放；没有连击加分或顿帧。只有 Boss 命中、转阶段和击破震屏，HUD 保持固定；普通敌人、玩家受伤和炸弹本身不震屏。个人赛 Boss 击破后保留 0.7 秒爆散展示再结算，不增加分数或生存时长。
 
+战机不再显示外围身份圆圈，机体直接使用玩家颜色。方向、慢速或射击状态改变时立即发送逻辑输入，持续输入仍每 33 毫秒发送；显示位置独立于快照保留，以当前输入推进，再以每秒最多 80 逻辑像素修正快照误差，避免换向时硬覆盖位置。显示外推仍受 150 毫秒上限约束，碰撞与得分由主机决定。
+
+玩家子弹的弹头和拖尾分别使用 MultiMesh 批量绘制；拖尾沿用 12 段曲线与透明渐隐，由顶点着色器执行弯曲，运行时不逐弹重建网格。碰撞先检查存活可受伤玩家的整体包围区域，再做逐玩家的包围盒与精确扫掠线段检测，高速穿越仍能命中。
+
+开发参考：[Shooting projectiles](https://kidscancode.org/godot_recipes/4.x/2d/2d_shooting/index.html)、Godot 官方 [Bullet Shower Demo](https://godotengine.org/asset-library/asset/2711) 和 [MultiMesh 优化](https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html)。参考其弹道与显示分离、集中更新和批量绘制思路；未引入外部游戏资源。
+
 API 4 / manifest 2，普通 standard 排名协议。由原版小游戏轮换大游戏选择本包即可测试。协议、大游戏和所有已选小游戏的有效人数取交集；星潮团队模式会收窄为偶数。房间规则使用本包 config_schema；高级设置创建的预设仍走框架草稿/应用/保存流程。局内没有重开或单独暂停，切出窗口不会暂停计时。原型保留在 tmp，此包不依赖原型目录。
 
 自动化：tests/original_arcade_rules_test.gd（规则、清单、人数）和 tests/original_arcade_network_test.gd（正式大厅、轮换、4/5 个 ENet 端、UI 回调和结算）。真实键鼠、多窗口手感及外网仍需人工检查。
