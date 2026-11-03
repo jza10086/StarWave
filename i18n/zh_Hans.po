@@ -1,0 +1,50 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: zh_Hans\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "GodotPartyDefault · 星潮"
+msgstr "GodotPartyDefault · 星潮"
+
+msgid "个人赛 2–8 人同一战场；团队赛 2/4/6/8 人分为两个独立战场，以全队生存时长排名。"
+msgstr "个人赛 2–8 人同一战场；团队赛 2/4/6/8 人分为两个独立战场，以全队生存时长排名。"
+
+msgid "向上"
+msgstr "向上"
+
+msgid "向下"
+msgstr "向下"
+
+msgid "向右"
+msgstr "向右"
+
+msgid "向左"
+msgstr "向左"
+
+msgid "射击"
+msgstr "射击"
+
+msgid "本机偏好"
+msgstr "本机偏好"
+
+msgid "比赛时限（秒）"
+msgstr "比赛时限（秒）"
+
+msgid "比赛模式"
+msgstr "比赛模式"
+
+msgid "清屏炸弹"
+msgstr "清屏炸弹"
+
+msgid "游戏规则"
+msgstr "游戏规则"
+
+msgid "精确移动"
+msgstr "精确移动"
+
+msgid "自动射击"
+msgstr "自动射击"
+
+msgid "音效"
+msgstr "音效"
