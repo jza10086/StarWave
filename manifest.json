@@ -7,6 +7,7 @@
   "kind": "minigame",
   "entry": "game.tscn",
   "player_counts": [
+    1,
     2,
     3,
     4,
@@ -60,7 +61,7 @@
       ]
     }
   ],
-  "introduction": "个人赛 2–8 人同一战场；团队赛 2/4/6/8 人分为两个独立战场，以全队生存时长排名。",
+  "introduction": "个人赛 1–8 人同一战场；团队赛 2/4/6/8 人分为两个独立战场，以全队生存时长排名。",
   "localization": {
     "supported_locales": [
       "zh_Hans"
