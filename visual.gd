@@ -25,6 +25,11 @@ var beam: ImageTexture
 var energy_ring: ImageTexture
 var light_canvas: Node2D
 var space_canvas: ColorRect
+var curve_indices: PackedInt32Array = PackedInt32Array()
+var trail_indices: PackedInt32Array = PackedInt32Array()
+var curve_points: PackedVector2Array = PackedVector2Array()
+var curve_colors: PackedColorArray = PackedColorArray()
+var curve_batch_indices: PackedInt32Array = PackedInt32Array()
 
 # Generated once. Gaussian alpha is continuous, not concentric solid bands.
 func _make_light_texture(kind: int) -> ImageTexture:
@@ -86,6 +91,12 @@ func _light_pass() -> void:
 
 
 func _ready() -> void:
+	# Shared topology for two feathered halves across twelve curved-wake segments.
+	for segment: int in 12:
+		var base: int = segment * 3
+		curve_indices.append_array(PackedInt32Array([base, base + 3, base + 4, base, base + 4, base + 1,
+			base, base + 5, base + 3, base, base + 2, base + 5]))
+	trail_indices = curve_indices.slice(0, 96)
 	_setup_lighting()
 	audio = AudioStreamPlayer.new()
 	audio.volume_db = -18
@@ -204,7 +215,15 @@ func _field() -> void:
 	for effect: Variant in core.effects: _impact(effect)
 	for shield: Variant in core.damage_waves: _damage_shield(shield)
 	for remnant: Variant in core.cancel_effects: _bullet_cancel(remnant)
-	for b: Variant in core.bullets: _bullet(b)
+	curve_points.clear()
+	curve_colors.clear()
+	for bullet: Dictionary in core.bullets:
+		_bullet_wake(bullet)
+	if not curve_points.is_empty():
+		var index_count: int = curve_points.size() / 39 * 144
+		RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), curve_batch_indices.slice(0, index_count), curve_points, curve_colors)
+	for bullet: Dictionary in core.bullets:
+		_bullet(bullet)
 	for pilot: Dictionary in core.pilots.values():
 		if pilot.lives <= 0: continue
 		core.player = pilot.pos
@@ -218,15 +237,22 @@ func _field() -> void:
 		_neon_ring(core.player,maxf(0,(.65-bomb_flash)*1600),Color(CYAN,bomb_flash*.85),2)
 
 func _trail(p: Vector2, dir: Vector2, length: float, width: float, col: Color) -> void:
-	var side: Variant = dir.orthogonal()
-	for i: Variant in range(8):
-		var t0: Variant = float(i)/8
-		var t1: Variant = float(i+1)/8
-		for sign_side: Variant in [-1,1]:
-			var a: Variant = p+dir*length*t0
-			var b: Variant = p+dir*length*t1
-			var pts: Variant = PackedVector2Array([a,b,b+side*sign_side*width*(1-t1),a+side*sign_side*width*(1-t0)])
-			draw_polygon(pts,PackedColorArray([Color(col,col.a*pow(1-t0,1.7)),Color(col,col.a*pow(1-t1,1.7)),Color(col,0),Color(col,0)]))
+	var points: PackedVector2Array = PackedVector2Array()
+	var colors: PackedColorArray = PackedColorArray()
+	points.resize(27)
+	colors.resize(27)
+	for sample_index: int in 9:
+		var progress: float = float(sample_index) / 8.0
+		var center: Vector2 = p + dir * length * progress
+		var side: Vector2 = dir.orthogonal() * width * (1.0 - progress)
+		var index: int = sample_index * 3
+		points[index] = center
+		points[index + 1] = center - side
+		points[index + 2] = center + side
+		colors[index] = Color(col, col.a * pow(1.0 - progress, 1.7))
+		colors[index + 1] = Color(col, 0.0)
+		colors[index + 2] = Color(col, 0.0)
+	RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), trail_indices, points, colors)
 
 func _impact(effect: Dictionary) -> void:
 	var age: float = effect.get("age",0)
@@ -282,6 +308,24 @@ func _bullet_cancel(remnant: Dictionary) -> void:
 		var at: Variant = p+dir*(r+2.0+t*10.0)
 		draw_line(at,at+dir*(2.0+2.0*fade),Color(col,fade*.65),1.2,true)
 
+func _bullet_wake(b: Dictionary) -> void:
+	var position_value: Vector2 = b.pos
+	if not Rect2(Vector2(8, 8), FIELD - Vector2(16, 16)).has_point(position_value):
+		return
+	var original: Color = b.color
+	var color: Color = Color("ff6096") if original.r > original.b else Color("b17bff")
+	if original.g > .65 and original.r > .8:
+		color = Color("ffc35e")
+	if absf(float(b.angular_velocity)) > .00001:
+		_curve_wake(b, Color(color, .34))
+	else:
+		var age: float = b.age
+		var past: float = maxf(0.0, age - .36)
+		var length: float = Vector2(b.vel).length() * (age - past)
+		if b.has("speed_start"):
+			length = Core.bullet_travel_at(b, age) - Core.bullet_travel_at(b, past)
+		_trail(position_value, -Vector2(b.vel).normalized(), length, b.radius * .85, Color(color, .34))
+
 func _bullet(b: Dictionary) -> void:
 	var p: Vector2 = b.pos
 	if not Rect2(Vector2(8,8),FIELD-Vector2(16,16)).has_point(p): return
@@ -291,16 +335,6 @@ func _bullet(b: Dictionary) -> void:
 	if original.g>.65 and original.r>.8: col=Color("ffc35e")
 	var dir: Vector2 = -Vector2(b.get("vel",Vector2.DOWN)).normalized()
 	var needle: bool = b.get("type","") == "needle" or b.get("kind","") == "needle"
-	# Curved Boss wakes reconstruct actual recent arc positions, without history buffers.
-	if absf(float(b.get("angular_velocity",0.0))) > .00001:
-		_curve_wake(b,Color(col,.34))
-	else:
-		var age: float = b.get("age",0.0)
-		var past: Variant = maxf(0.0,age-.36)
-		var length: float = Vector2(b.vel).length()*(age-past)
-		if b.has("speed_start"):
-			length = Core.bullet_travel_at(b,age)-Core.bullet_travel_at(b,past)
-		_trail(p,dir,length,r*.85,Color(col,.34))
 	_soft_orb(p,r,col)
 	if b.get("kind", "") == "crescent":
 		# The filled disc is the collision core; this fine crescent is decoration only.
@@ -310,27 +344,33 @@ func _bullet(b: Dictionary) -> void:
 		_glyph_edge(PackedVector2Array([p+dir*r*2.4,p+dir.orthogonal()*r,p-dir*r*1.3,p-dir.orthogonal()*r]),Color(col,.85),.9)
 
 func _curve_wake(b: Dictionary, col: Color) -> void:
-	var p: Vector2 = b.pos
+	var position_value: Vector2 = b.pos
 	var velocity: Vector2 = b.vel
 	var curve: float = b.angular_velocity
-	var duration: float = minf(float(b.age),.55)
-	var r: float = b.radius
-	# Twelve bounded segments with transparent outer edges; exact inverse of the core's circular-arc integration.
-	for n: Variant in range(12):
-		var t0: Variant = float(n)/12.0
-		var t1: Variant = float(n+1)/12.0
-		var straight_time: Variant = maxf(float(b.age)-float(b.get("curve_duration",3.0)),0.0)
-		var back0: Variant = duration*t0
-		var back1: Variant = duration*t1
-		var v0: Variant = velocity.rotated(-curve*maxf(back0-straight_time,0.0))
-		var v1: Variant = velocity.rotated(-curve*maxf(back1-straight_time,0.0))
-		var a: Variant = p-velocity*minf(back0,straight_time)+Vector2(v0.y-velocity.y,velocity.x-v0.x)/curve
-		var bpos: Variant = p-velocity*minf(back1,straight_time)+Vector2(v1.y-velocity.y,velocity.x-v1.x)/curve
-		var side0: Variant = v0.normalized().orthogonal()*r*(1-t0)*.85
-		var side1: Variant = v1.normalized().orthogonal()*r*(1-t1)*.85
-		# Two feathered halves retain the approved soft colored ribbon, never a hard wedge.
-		for sign_side: Variant in [-1,1]:
-			draw_polygon(PackedVector2Array([a,bpos,bpos+side1*sign_side,a+side0*sign_side]),PackedColorArray([Color(col,col.a*pow(1-t0,1.7)),Color(col,col.a*pow(1-t1,1.7)),Color(col,0),Color(col,0)]))
+	var duration: float = minf(float(b.age), .55)
+	var radius: float = b.radius
+	var straight_time: float = maxf(float(b.age) - float(b.curve_duration), 0.0)
+	var base: int = curve_points.size()
+	curve_points.resize(base + 39)
+	curve_colors.resize(base + 39)
+	# Grow shared topology only when the visible bullet count exceeds its previous peak.
+	if curve_batch_indices.size() < (base / 39 + 1) * 144:
+		for vertex_index: int in curve_indices:
+			curve_batch_indices.append(base + vertex_index)
+	# All curved wakes share one draw call, retaining the original twelve segments.
+	for sample_index: int in 13:
+		var progress: float = float(sample_index) / 12.0
+		var back: float = duration * progress
+		var past_velocity: Vector2 = velocity.rotated(-curve * maxf(back - straight_time, 0.0))
+		var center: Vector2 = position_value - velocity * minf(back, straight_time) + Vector2(past_velocity.y - velocity.y, velocity.x - past_velocity.x) / curve
+		var side: Vector2 = past_velocity.normalized().orthogonal() * radius * (1.0 - progress) * .85
+		var index: int = base + sample_index * 3
+		curve_points[index] = center
+		curve_points[index + 1] = center - side
+		curve_points[index + 2] = center + side
+		curve_colors[index] = Color(col, col.a * pow(1.0 - progress, 1.7))
+		curve_colors[index + 1] = Color(col, 0.0)
+		curve_colors[index + 2] = Color(col, 0.0)
 
 func _diamond(p: Vector2, radius: float, color: Color) -> void:
 	draw_colored_polygon(_poly(p,radius,4,-PI/2),color)

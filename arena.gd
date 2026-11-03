@@ -16,6 +16,40 @@ func configure(roster: Array, team: bool) -> void:
 		var entry: Dictionary = roster[index]
 		pilots[entry.id] = {"name": entry.name, "color": entry.color, "pos": Vector2(FIELD.x * (index + 1) / (roster.size() + 1), FIELD.y - 150), "lives": 3, "bombs": 3, "power": 1, "invulnerable": 1.8, "timer": 0.0, "score": 0, "kills": 0, "hurt": 0, "boss_damage": 0.0, "move": Vector2.ZERO, "fire": false, "focus": false, "bomb": false, "latch": false, "last_input": 0.0}
 
+## Advance only a received display copy between 10 Hz snapshots.
+## No spawning, collision, damage, rewards or gameplay timers run on this path.
+func advance_presentation(dt: float) -> void:
+	if state != "playing":
+		return
+	for enemy: Dictionary in enemies:
+		enemy.age += dt
+		enemy.flash = maxf(0.0, float(enemy.flash) - dt)
+		enemy.pos = enemy_route_position(enemy, enemy.age)
+		enemy.velocity = (enemy_route_position(enemy, enemy.age + 0.002) - enemy_route_position(enemy, maxf(0.0, enemy.age - 0.002))) / 0.004
+		var bank: float = clampf(-Vector2(enemy.velocity).x / 520.0, -0.30, 0.30)
+		enemy.rotation = lerpf(float(enemy.rotation), bank, 1.0 - exp(-dt * 7.0))
+	if not boss.is_empty() and float(boss.hp) > 0.0:
+		var previous_position: Vector2 = boss.pos
+		boss.age += dt
+		boss.flash = maxf(0.0, float(boss.flash) - dt)
+		if float(boss.telegraph) > 0.0:
+			boss.pos = Vector2(boss.pos).lerp(Vector2(field_size.x * 0.5, 205.0), 1.0 - exp(-2.4 * dt))
+		elif boss.has("move_from") and int(boss.choreography_slot) != 0:
+			var progress: float = clampf(float(boss.cycle_time) / 1.35, 0.0, 1.0)
+			progress = progress * progress * (3.0 - 2.0 * progress)
+			boss.pos = Vector2(boss.move_from).lerp(Vector2(boss.move_to), progress)
+		_update_boss_animation(dt, previous_position)
+		if float(boss.telegraph) > 0.0:
+			boss.telegraph = maxf(0.0, float(boss.telegraph) - dt)
+		else:
+			boss.cycle_time += dt
+	for pickup: Dictionary in pickups:
+		pickup.age += dt
+		pickup.pos.y += 82.0 * dt
+	_update_effects(dt)
+	_update_damage_waves(dt)
+	_update_cancel_effects(dt)
+
 func set_input(id: String, data: Dictionary) -> void:
 	if not pilots.has(id) or pilots[id].lives <= 0:
 		return

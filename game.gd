@@ -77,20 +77,28 @@ func tick_game(delta: float) -> void:
 				ended = false
 		if ended or elapsed >= float(settings.get("duration", 180)):
 			_finish_match()
+	# Stop prediction after the existing 150 ms horizon if snapshots stall.
+	var presentation_delta: float = minf(delta, maxf(0.0, 0.15 - visual_age))
 	visual_age += delta
 	for model: RefCounted in display_models:
-		if visual_age <= 0.15:
+		if presentation_delta > 0.0:
+			var remaining: float = presentation_delta
+			while remaining > 0.0:
+				var step: float = minf(remaining, 1.0 / 120.0)
+				model.advance_presentation(step)
+				remaining -= step
 			for pilot_id: String in model.pilots:
 				var pilot: Dictionary = model.pilots[pilot_id]
 				if pilot.lives <= 0:
 					continue
+				pilot.invulnerable = maxf(0.0, float(pilot.invulnerable) - presentation_delta)
 				var movement: Vector2 = pilot.move
 				if pilot_id == local_id:
 					movement = api.input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down")
-				pilot.pos = (Vector2(pilot.pos) + movement * (155 if pilot.focus else 350) * delta).clamp(Vector2(24, 90), Vector2(1416, 926))
+				pilot.pos = (Vector2(pilot.pos) + movement * (155 if pilot.focus else 350) * presentation_delta).clamp(Vector2(24, 90), Vector2(1416, 926))
 			for collection: Array in [model.bullets, model.shots]:
 				for projectile: Dictionary in collection:
-					projectile.pos += Vector2(projectile.vel) * delta
+					projectile.pos += Vector2(projectile.vel) * presentation_delta
 	for visual: Node2D in displays:
 		visual.muted = not bool(api.config.get_own(&"sound", true))
 		visual.visual_time += delta
