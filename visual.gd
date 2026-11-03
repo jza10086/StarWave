@@ -20,6 +20,7 @@ var sounds: Dictionary = {}
 var audio: AudioStreamPlayer
 var pointer_active: Variant = false
 var shape_cache: Dictionary = {}
+var hit_white: float = 0.0
 var aura: ImageTexture
 var beam: ImageTexture
 var energy_ring: ImageTexture
@@ -30,6 +31,85 @@ var trail_indices: PackedInt32Array = PackedInt32Array()
 var curve_points: PackedVector2Array = PackedVector2Array()
 var curve_colors: PackedColorArray = PackedColorArray()
 var curve_batch_indices: PackedInt32Array = PackedInt32Array()
+
+
+# Feedback has a local clock: a repeated network snapshot cannot restart a flash.
+var feedback_id: int = 0
+var feedback_effects: Array[Dictionary] = []
+var hit_poses: Dictionary = {}
+var shake_age: float = 0.0
+var shake_duration: float = 0.0
+var shake_strength: float = 0.0
+var feedback_audio: AudioStreamPlayer
+var sound_cooldown: float = 0.0
+
+func consume_feedback(events: Array) -> void:
+	var hits: Dictionary = {}
+	var sound: String = ""
+	for event: Dictionary in events:
+		if int(event.feedback_id) <= feedback_id:
+			continue
+		feedback_id = int(event.feedback_id)
+		if event.type == "hit":
+			var id: int = event.target_id
+			if hits.has(id):
+				hits[id].damage += float(event.damage)
+			else:
+				hits[id] = event.duplicate()
+			continue
+		var effect: Dictionary = event.duplicate()
+		effect.age = 0.0
+		feedback_effects.append(effect)
+		if event.type == "phase":
+			_boss_shake(4.0, 0.32)
+			sound = "phase"
+		elif event.type == "victory":
+			_boss_shake(8.0, 0.55)
+			sound = "clear"
+		elif event.type == "explosion" and sound.is_empty():
+			sound = "break"
+	for id: int in hits:
+		var hit: Dictionary = hits[id]
+		hit.age = 0.0
+		hit.life = 0.48
+		feedback_effects.append(hit)
+		hit_poses[id] = {"age": 0.0, "direction": hit.direction}
+		if hit.boss_hit:
+			_boss_shake(1.3, 0.13)
+		if sound.is_empty():
+			sound = "hit"
+	while feedback_effects.size() > 90:
+		feedback_effects.pop_front()
+	if not sound.is_empty() and sound_cooldown <= 0.0 and not muted and is_visible_in_tree():
+		feedback_audio.stream = sounds[sound]
+		feedback_audio.play()
+		sound_cooldown = 0.065 if sound == "hit" else 0.12
+
+func advance_feedback(delta: float) -> void:
+	sound_cooldown = maxf(0.0, sound_cooldown - delta)
+	for index: int in range(feedback_effects.size() - 1, -1, -1):
+		feedback_effects[index].age += delta
+		if feedback_effects[index].age >= feedback_effects[index].life:
+			feedback_effects.remove_at(index)
+	for id: int in hit_poses.keys():
+		hit_poses[id].age += delta
+		if hit_poses[id].age >= 0.26:
+			hit_poses.erase(id)
+	shake_age += delta
+	var offset: Vector2 = Vector2.ZERO
+	if shake_age < shake_duration:
+		var envelope: float = pow(1.0 - shake_age / shake_duration, 2.0)
+		offset = Vector2(sin(visual_time * 83.0), sin(visual_time * 107.0)) * shake_strength * envelope
+	position = offset * scale
+	# Keep the background covering the entire surface and HUD anchored to the screen.
+	space_canvas.position = -offset
+
+func _boss_shake(strength: float, duration: float) -> void:
+	var remaining_strength: float = shake_strength * maxf(0.0, 1.0 - shake_age / maxf(shake_duration, 0.001))
+	if strength >= remaining_strength:
+		shake_age = 0.0
+		shake_duration = duration
+		shake_strength = strength
 
 # Generated once. Gaussian alpha is continuous, not concentric solid bands.
 func _make_light_texture(kind: int) -> ImageTexture:
@@ -72,7 +152,7 @@ func _light_pass() -> void:
 	for e: Variant in core.enemies:
 		var col: Variant = Color("eeb66c") if e.type=="gunner" else Color("af88e7") if e.type=="weaver" else Color("e67eaa")
 		_aura_at(e.pos,Vector2.ONE*e.radius*3.4,Color(col,.12))
-	if not core.boss.is_empty():
+	if not core.boss.is_empty() and float(core.boss.hp) > 0.0:
 		var p: Vector2 = core.boss.pos
 		_aura_at(p,Vector2(220,160),Color(.47,.24,1,.24))
 	for shot: Variant in core.shots: _aura_at(shot.pos,Vector2(13,30),Color(CYAN,.27))
@@ -85,7 +165,7 @@ func _light_pass() -> void:
 	if core.state!="lost":
 		_aura_at(core.player,Vector2(65,65),Color(CYAN,.18))
 		_aura_at(core.player+Vector2(0,34),Vector2(40,70),Color(.15,.45,1,.22))
-	for effect: Variant in core.effects:
+	for effect: Variant in feedback_effects:
 		var a: Variant = clampf(1.0-effect.get("age",0)/maxf(effect.get("life",.5),.001),0,1)
 		_aura_at(effect.pos,Vector2.ONE*effect.get("radius",24)*3,Color(CYAN,a*.28))
 
@@ -101,7 +181,11 @@ func _ready() -> void:
 	audio = AudioStreamPlayer.new()
 	audio.volume_db = -18
 	add_child(audio)
-	for kind: String in ["start", "bomb", "hurt", "clear"]:
+	feedback_audio = AudioStreamPlayer.new()
+	feedback_audio.volume_db = -22
+	feedback_audio.max_polyphony = 3
+	add_child(feedback_audio)
+	for kind: String in ["start", "bomb", "hurt", "clear", "hit", "break", "phase"]:
 		sounds[kind] = _make_sound(kind)
 	set_process(false)
 
@@ -167,6 +251,8 @@ func _soft_polygon(pts: PackedVector2Array, col: Color) -> void:
 		img.generate_mipmaps()
 		shape_cache[key] = ImageTexture.create_from_image(img)
 	draw_texture_rect(shape_cache[key],Rect2(bounds.position-Vector2.ONE*2,bounds.size+Vector2.ONE*4),false,Color(1,1,1,col.a))
+	if hit_white > 0.0:
+		draw_colored_polygon(pts, Color(1, 1, 1, hit_white * col.a))
 
 func _soft_orb(p: Vector2, r: float, col: Color) -> void:
 	var key: Variant = "orb"+col.to_html(false)
@@ -180,6 +266,8 @@ func _soft_orb(p: Vector2, r: float, col: Color) -> void:
 		shape_cache[key] = ImageTexture.create_from_image(img)
 	var extent: Variant = r*32.0/30.0
 	draw_texture_rect(shape_cache[key],Rect2(p-Vector2.ONE*extent,Vector2.ONE*extent*2),false,Color(1,1,1,col.a))
+	if hit_white > 0.0:
+		draw_circle(p, r, Color(1, 1, 1, hit_white * col.a), true, -1, true)
 
 func _neon_ring(p: Vector2, radius: float, color: Color, width: float = 1.5, start: float = 0, end: float = TAU) -> void:
 	# Annular Gaussian is used for full energy rings; arcs remain fine, clean cores.
@@ -207,12 +295,12 @@ func _field() -> void:
 		_glyph_edge(head,Color("efffff"),.7)
 
 	for e: Variant in core.enemies: _enemy(e)
-	if not core.boss.is_empty(): _enemy(core.boss)
+	if not core.boss.is_empty() and float(core.boss.hp) > 0.0: _enemy(core.boss)
 	for pick: Variant in core.pickups:
 		var p: Vector2 = pick.pos
 		_soft_polygon(_poly(p,17,4,-PI/2),GOLD)
 		_center(p+Vector2(0,5),"P" if pick.get("type","power")=="power" else "B",14,Color("fff1ce"))
-	for effect: Variant in core.effects: _impact(effect)
+	for effect: Variant in feedback_effects: _impact(effect)
 	for shield: Variant in core.damage_waves: _damage_shield(shield)
 	for remnant: Variant in core.cancel_effects: _bullet_cancel(remnant)
 	curve_points.clear()
@@ -255,25 +343,42 @@ func _trail(p: Vector2, dir: Vector2, length: float, width: float, col: Color) -
 	RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), trail_indices, points, colors)
 
 func _impact(effect: Dictionary) -> void:
-	var age: float = effect.get("age",0)
-	var life: float = maxf(effect.get("life",.5),.001)
-	var a: Variant = clampf(1-age/life,0,1)
-	# At lifetime epsilon the fragments collapse to degenerate triangles.
-	# They are already invisible; omit them instead of sending invalid polygons.
-	if a < .01: return
+	var age: float = effect.age
+	var progress: float = clampf(age / float(effect.life), 0.0, 1.0)
+	var fade: float = 1.0 - progress
+	if fade < 0.01:
+		return
 	var p: Vector2 = effect.pos
-	var r: float = effect.get("radius",24)*(1+age*3)
-	# Hollow, fading fragments never resemble filled hostile bullet cores.
-	_neon_ring(p,r,Color(CYAN,a*.6),1.2)
-	_neon_ring(p,r*.72,Color(.62,.5,1,a*.24),.8)
-	for n: Variant in range(7):
-		var dir: Variant = Vector2.from_angle(n*TAU/7+float(effect.get("radius",24)))
-		var q: Variant = p+dir*r*(.65+float(n%3)*.2)
-		var pts: Variant = PackedVector2Array([q+dir*(8+n%3*3)*a,q+dir.orthogonal()*4*a,q-dir*(4+n%2*3)*a])
-		if Rect2(Vector2(8,8),FIELD-Vector2(16,16)).has_point(q):
-			draw_colored_polygon(pts,Color(.38,.68,1,a*.10))
-			draw_polyline(pts+PackedVector2Array([pts[0]]),Color(.55,.82,1,a*.65),1,true)
-	if age<.12: _neon_ring(p,5+age*80,Color(.8,1,1,a*.65),2)
+	if effect.type == "hit":
+		# Open streaks and a short white glint never look like hostile bullet cores.
+		var spark_fade: float = maxf(0.0, 1.0 - age / 0.22)
+		var incoming: Vector2 = effect.direction
+		for index: int in 5:
+			var direction: Vector2 = (-incoming).rotated((index - 2) * 0.5)
+			var tip: Vector2 = p + direction * (8.0 + age * (135.0 + index * 18.0))
+			draw_line(tip, tip - direction * 12.0 * spark_fade, Color(GOLD, spark_fade), 1.5, true)
+		if age < 0.055:
+			draw_line(p - Vector2(11, 0), p + Vector2(11, 0), Color(1, 1, 1, spark_fade), 2.0, true)
+			draw_line(p - Vector2(0, 7), p + Vector2(0, 7), Color(1, 1, 1, spark_fade), 2.0, true)
+		var label: String = str(ceili(float(effect.damage)))
+		var at: Vector2 = p + Vector2(22, -22 - 54 * progress)
+		draw_string_outline(FONT, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, 3, Color(INK, fade))
+		draw_string(FONT, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("fff3cf", fade))
+		return
+	var burst: bool = effect.type in ["explosion", "victory"]
+	var color: Color = GOLD if burst else CYAN
+	var radius: float = float(effect.radius) * (0.25 + 1.1 * (1.0 - pow(1.0 - progress, 3.0)))
+	_neon_ring(p, radius, Color(color, fade * fade * 0.75), 1.6)
+	if burst or effect.type == "phase":
+		_neon_ring(p, radius * 0.68, Color("bf9aff", fade * 0.35), 1.0)
+		var count: int = 16 if effect.type == "victory" else 9
+		for index: int in count:
+			var direction: Vector2 = Vector2.from_angle(index * TAU / count + float(effect.feedback_id))
+			var distance: float = radius * (0.7 + (index % 3) * 0.18)
+			var tip: Vector2 = p + direction * distance
+			draw_line(tip, tip - direction * (8.0 + index % 4 * 4.0) * fade, Color(color, fade * 0.8), 2.0, true)
+		if age < 0.09:
+			draw_circle(p, 9.0 * (1.0 - age / 0.09), Color(1, 1, 1, fade * 0.8), true, -1, true)
 
 func _damage_shield(shield: Dictionary) -> void:
 	var p: Vector2 = shield.pos
@@ -381,13 +486,20 @@ func _enemy(e: Dictionary) -> void:
 	var kind: String = e.get("type","scout")
 	var r: float = e.get("radius",19)
 	var col: Variant = Color("ffc35e") if kind in ["gunner","sniper"] else Color("aa77ff") if kind in ["weaver","orbiter"] else Color("ff77ba")
-	if float(e.get("flash",0))>0: col=col.lightened(.35)
+	var squash: Vector2 = Vector2.ONE
+	hit_white = 0.0
+	if hit_poses.has(int(e.id)):
+		var pose: Dictionary = hit_poses[int(e.id)]
+		var recoil: float = sin(float(pose.age) / 0.26 * PI * 2.0) * exp(-float(pose.age) * 13.0)
+		world += Vector2(pose.direction) * recoil * (2.0 if kind == "boss" else 7.0)
+		squash = Vector2(1.0 + recoil * 0.16, 1.0 - recoil * 0.13)
+		hit_white = maxf(0.0, 1.0 - float(pose.age) / 0.085) * 0.72
 	# Rotate a fixed local-space assembly, never regenerate geometry each frame.
 	# Simulation owns the angle: pause freezes it and collision remains at world.
-	draw_set_transform(world, float(e.get("rotation",0.0)))
+	draw_set_transform(world, float(e.get("rotation",0.0)), squash)
 	var p: Variant = Vector2.ZERO
 	if kind=="boss":
-		col=Color("b184ff") if float(e.get("flash",0))<=0 else Color("e6bfff")
+		col = Color("b184ff")
 		# The circle is the unchanged collision field. Everything beyond it is decoration.
 		draw_set_transform(world)
 		_soft_orb(p,r,Color(col,.24))
@@ -447,6 +559,7 @@ func _enemy(e: Dictionary) -> void:
 	else:
 		_soft_polygon(PackedVector2Array([p+Vector2(-r,-r*.6),p+Vector2(0,r*1.3),p+Vector2(r,-r*.6),p+Vector2(0,-r*.2)]),col)
 		_glyph_edge(PackedVector2Array([p+Vector2(-r*.36,0),p+Vector2(0,r*.5),p+Vector2(r*.36,0)]),col.lightened(.65),1.3,false)
+	hit_white = 0.0
 	draw_set_transform(ORIGIN)
 
 func _player() -> void:
@@ -514,14 +627,21 @@ func _make_sound(kind: String) -> AudioStreamWAV:
 	var wav: Variant = AudioStreamWAV.new()
 	wav.format = AudioStreamWAV.FORMAT_16_BITS
 	wav.mix_rate = 22050
-	var duration: Variant = 0.42 if kind == "bomb" else 0.22
+	var duration: float = 0.07 if kind == "hit" else 0.42 if kind in ["bomb", "break", "phase"] else 0.22
 	var count: Variant = int(duration * wav.mix_rate)
 	var bytes: Variant = PackedByteArray()
 	bytes.resize(count*2)
 	for i: Variant in range(count):
 		var t: Variant = float(i)/wav.mix_rate
 		var freq: Variant = 240.0 + t*1200 if kind == "start" or kind == "clear" else 130.0 - t*90
-		var value: Variant = sin(TAU*freq*t) * pow(1-float(i)/count,2) * 0.4
+		if kind == "hit":
+			freq = 850.0 - t * 7000.0
+		elif kind == "break":
+			freq = 180.0 - t * 250.0
+		elif kind == "phase":
+			freq = 90.0 + t * 450.0
+		var grain: float = sin(i * 78.233) * sin(i * 12.9898) if kind in ["hit", "break"] else 0.0
+		var value: float = (sin(TAU * freq * t) * 0.3 + grain * 0.15) * pow(1.0 - float(i) / count, 2)
 		bytes.encode_s16(i*2,int(value*32767))
 	wav.data = bytes
 	return wav

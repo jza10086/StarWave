@@ -11,6 +11,7 @@ var team_mode: bool = false
 var previous_local: Dictionary = {}
 var rendered_sequence: int = -1
 var visual_age: float = 0.0
+var victory_outro: float = 0.0
 var surfaces: Array[Control] = []
 @onready var hud: MarginContainer = %HUD
 @onready var lives_label: Label = %Lives
@@ -75,7 +76,12 @@ func tick_game(delta: float) -> void:
 		for arena: RefCounted in arenas:
 			if arena.state == "playing":
 				ended = false
-		if ended or elapsed >= float(settings.get("duration", 180)):
+		# Allow the final Boss burst to reach every display before settlement covers it.
+		if ended and arenas[0].state == "won":
+			victory_outro += delta
+			if victory_outro >= 0.7:
+				_finish_match()
+		elif ended or elapsed >= float(settings.get("duration", 180)):
 			_finish_match()
 	# Stop prediction after the existing 150 ms horizon if snapshots stall.
 	var presentation_delta: float = minf(delta, maxf(0.0, 0.15 - visual_age))
@@ -102,6 +108,7 @@ func tick_game(delta: float) -> void:
 	for visual: Node2D in displays:
 		visual.muted = not bool(api.config.get_own(&"sound", true))
 		visual.visual_time += delta
+		visual.advance_feedback(delta)
 		visual.queue_redraw()
 
 func handle_action(id: String, data: Dictionary) -> void:
@@ -128,6 +135,8 @@ func render_game() -> void:
 		var snap: Dictionary = decoded[index]
 		for key: String in snap:
 			display_models[index].set(key, snap[key])
+		displays[index].muted = not bool(api.config.get_own(&"sound", true))
+		displays[index].consume_feedback(snap.effects)
 		for id: String in snap.pilots:
 			if id != local_id:
 				continue

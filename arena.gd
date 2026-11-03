@@ -7,6 +7,7 @@ var team_mode: bool = false
 var survival: float = 0.0
 var cleared: bool = false
 var cycle: int = 0
+var feedback_sequence: int = 0
 
 func configure(roster: Array, team: bool) -> void:
 	start()
@@ -152,6 +153,20 @@ func _add_shot(position_value: Vector2, velocity: Vector2, damage: float) -> voi
 	if shots.size() < MAX_SHOTS * maxi(1, pilots.size()):
 		shots.append({"pos": position_value, "vel": velocity, "damage": damage, "radius": 4.0, "owner": owner})
 
+## Snapshot-retained events have stable IDs; presentation consumes each only once.
+func _add_effect(position_value: Vector2, kind: String, radius: float, life: float) -> void:
+	super._add_effect(position_value, kind, radius, life)
+	feedback_sequence += 1
+	effects.back()["feedback_id"] = feedback_sequence
+
+func _hit_feedback(target: Dictionary, damage: float, direction: Vector2) -> void:
+	_add_effect(target.pos, "hit", 18.0, 0.45)
+	var effect: Dictionary = effects.back()
+	effect["target_id"] = target.id
+	effect["damage"] = minf(damage, float(target.hp))
+	effect["direction"] = direction.normalized()
+	effect["boss_hit"] = target.type == "boss"
+
 func _destroy_enemy(index: int, drops: bool = true) -> void:
 	if pilots.has(owner):
 		pilots[owner].kills += 1
@@ -236,6 +251,7 @@ func _update_shots(dt: float) -> void:
 		for j: Variant in range(enemies.size() - 1, -1, -1):
 			var enemy: Dictionary = enemies[j]
 			if _segment_distance_squared(enemy["pos"], previous, pos) < pow(float(enemy["radius"]) + 4.0, 2.0):
+				_hit_feedback(enemy, float(shot.damage), shot.vel)
 				enemy["hp"] -= float(shot["damage"])
 				enemy["flash"] = 0.075
 				consumed = true
@@ -246,6 +262,7 @@ func _update_shots(dt: float) -> void:
 			if _segment_distance_squared(boss["pos"], previous, pos) < 62.0 * 62.0:
 				# Opening and phase warning windows are invulnerable, not skippable.
 				if float(boss["telegraph"]) <= 0.0:
+					_hit_feedback(boss, float(shot.damage), shot.vel)
 					credit_boss(owner, minf(float(boss.hp), float(shot.damage)))
 					boss["hp"] = maxf(0.0, float(boss["hp"]) - float(shot["damage"]))
 					boss["flash"] = 0.07
