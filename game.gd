@@ -9,32 +9,23 @@ var accumulated: float = 0.0
 var input_clock: float = 0.0
 var team_mode: bool = false
 var previous_local: Dictionary = {}
-var overview: bool = false
 var rendered_sequence: int = -1
 var visual_age: float = 0.0
-var panels: HBoxContainer
+var surfaces: Array[Control] = []
+@onready var hud: MarginContainer = %HUD
+@onready var lives_label: Label = %Lives
+@onready var score_label: Label = %Score
 
 func build_game() -> void:
 	team_mode = settings.get("mode", "个人赛") == "团队赛"
-	heading.text = "星潮 · " + ("双队生存赛" if team_mode else "共同战场个人赛")
-	footer.text = "WASD 移动 · Shift 精确移动 · X 炸弹 · 击败敌人 +100 / 受伤 −200 / Boss 每点有效伤害 +1"
-	if team_mode:
-		button(sidebar, "切换单队 / 双战场总览", func() -> void:
-			overview = not overview
-			_select_views())
-	panels = HBoxContainer.new()
-	panels.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	panels.add_theme_constant_override("separation", 16)
-	stage.add_child(panels)
+	hud.hide()
 	for index: int in (2 if team_mode else 1):
-		var column: VBoxContainer = VBoxContainer.new()
-		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		panels.add_child(column)
-		label(column, "战场 " + str(index + 1) if team_mode else "共同战场")
 		var surface: Control = Control.new()
-		surface.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		surface.clip_contents = true
-		column.add_child(surface)
+		stage.add_child(surface)
+		surfaces.append(surface)
 		var visual: Node2D = Visual.new()
 		var model: RefCounted = Arena.new()
 		visual.core = model
@@ -45,13 +36,16 @@ func build_game() -> void:
 		_fit.call_deferred(surface, visual)
 
 func _select_views() -> void:
-	for index: int in panels.get_child_count():
-		panels.get_child(index).visible = not team_mode or overview or local_id.is_empty() or index == int(team_by_player.get(local_id, 0))
+	# A spectator follows the first arena; participants always see their own team.
+	var visible_arena: int = int(team_by_player[local_id]) if not local_id.is_empty() else 0
+	for index: int in surfaces.size():
+		surfaces[index].visible = index == visible_arena
+	hud.visible = not local_id.is_empty()
 
 func _fit(surface: Control, visual: Node2D) -> void:
-	var factor: float = minf(surface.size.x / 1440.0, surface.size.y / 960.0)
-	visual.scale = Vector2.ONE * factor
-	visual.position = (surface.size - Vector2(1440, 960) * factor) * 0.5
+	# Fill the viewport while keeping the complete shared simulation field visible.
+	visual.scale = surface.size / Vector2(1440, 960)
+	visual.position = Vector2.ZERO
 
 func start_game() -> void:
 	for index: int in (2 if team_mode else 1):
@@ -70,7 +64,7 @@ func tick_game(delta: float) -> void:
 	input_clock += delta
 	if input_clock >= 0.033:
 		input_clock = 0
-		send_action({"move": api.input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down"), "fire": get_window().has_focus() and (bool(api.config.get_own(&"auto_fire", true)) or api.input.is_pressed(&"star_fire")), "focus": api.input.is_pressed(&"star_focus"), "bomb": api.input.is_pressed(&"star_bomb")})
+		send_action({"move": api.input.get_vector(&"move_left", &"move_right", &"move_up", &"move_down"), "fire": not api.input.input_blocked and get_window().has_focus() and (bool(api.config.get_own(&"auto_fire", true)) or api.input.is_pressed(&"star_fire")), "focus": api.input.is_pressed(&"star_focus"), "bomb": api.input.is_pressed(&"star_bomb")})
 	if api.is_host():
 		accumulated += delta
 		while accumulated >= 1.0 / 120.0:
@@ -122,32 +116,24 @@ func render_game() -> void:
 	var decoded: Variant = bytes_to_var(view.arenas.decompress(int(view.size), FileAccess.COMPRESSION_DEFLATE))
 	if not decoded is Array or decoded.size() != displays.size():
 		return
-	var lines: PackedStringArray = []
 	for index: int in decoded.size():
 		var snap: Dictionary = decoded[index]
-		var arena_title: Label = panels.get_child(index).get_child(0) as Label
-		arena_title.text = "战场 %d" % (index + 1) if team_mode else "共同战场"
-		if not snap.boss.is_empty():
-			arena_title.text += " · Boss %d / %d" % [ceili(snap.boss.hp), ceili(snap.boss.max_hp)]
 		for key: String in snap:
 			display_models[index].set(key, snap[key])
-		if team_mode:
-			lines.append("队伍 %d · 生存 %.1f 秒%s" % [index + 1, snap.survival, "（全队结束）" if snap.state == "lost" else ""])
 		for id: String in snap.pilots:
+			if id != local_id:
+				continue
 			var pilot: Dictionary = snap.pilots[id]
-			if id == local_id:
-				displays[index].muted = not bool(api.config.get_own(&"sound", true))
-				if previous_local.is_empty():
-					displays[index]._play("start")
-				elif pilot.lives < previous_local.lives:
-					displays[index]._play("hurt")
-				elif pilot.bombs < previous_local.bombs:
-					displays[index]._play("bomb")
-				previous_local = pilot.duplicate()
-			lines.append("%s%s  %d 分\n  生命 %d · 炸弹 %d · 击败 %d · 受伤 %d\n  Boss伤害 %d" % ["▶ " if id == local_id else "", pilot.name, pilot.score, pilot.lives, pilot.bombs, pilot.kills, pilot.hurt, int(pilot.boss_damage)])
-	standings.text = "\n".join(lines)
-	standings.add_theme_font_size_override("font_size", 18 if players.size() > 4 else 22)
-	status.text = "剩余 %d 秒 · %s" % [ceili(view.time), "以全队最后一人的存活时长排名；积分用于展示" if team_mode else "按个人积分排名，同分并列"]
+			displays[index].muted = not bool(api.config.get_own(&"sound", true))
+			if previous_local.is_empty():
+				displays[index]._play("start")
+			elif pilot.lives < previous_local.lives:
+				displays[index]._play("hurt")
+			elif pilot.bombs < previous_local.bombs:
+				displays[index]._play("bomb")
+			previous_local = pilot.duplicate()
+			lives_label.text = "生命  %d" % pilot.lives
+			score_label.text = "分数  %d" % pilot.score
 
 func _finish_match() -> void:
 	var scores: Dictionary = {}

@@ -212,7 +212,7 @@ func _field() -> void:
 		_player()
 		draw_arc(pilot.pos, 26, 0, TAU, 24, Color.WHITE, 5, true)
 		draw_arc(pilot.pos, 26, 0, TAU, 24, Color(pilot.color), 3, true)
-		_center(pilot.pos + Vector2(0, 46), pilot.name, 18, Color.WHITE)
+
 	if bomb_flash > 0:
 		draw_rect(Rect2(Vector2.ZERO,FIELD),Color(.3,1,.93,bomb_flash*.10))
 		_neon_ring(core.player,maxf(0,(.65-bomb_flash)*1600),Color(CYAN,bomb_flash*.85),2)
