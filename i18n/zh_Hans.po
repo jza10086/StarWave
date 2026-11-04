@@ -48,3 +48,9 @@ msgstr "自动射击"
 
 msgid "音效"
 msgstr "音效"
+
+msgid "hud.lives"
+msgstr "生命  {lives}"
+
+msgid "hud.score"
+msgstr "分数  {score}"

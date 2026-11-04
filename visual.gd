@@ -27,8 +27,8 @@ var shot_heads: MultiMesh
 var ribbons: MultiMesh
 var ribbon_count: int = 0
 var energy_ring: ImageTexture
-var light_canvas: Node2D
-var space_canvas: ColorRect
+@onready var light_canvas: Node2D = $LightPass
+@onready var space_canvas: ColorRect = $DeepSpace
 var curve_indices: PackedInt32Array = PackedInt32Array()
 var trail_indices: PackedInt32Array = PackedInt32Array()
 var curve_points: PackedVector2Array = PackedVector2Array()
@@ -133,20 +133,7 @@ func _setup_lighting() -> void:
 	beam = _make_light_texture(1)
 	energy_ring = _make_light_texture(2)
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	space_canvas = ColorRect.new()
-	space_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	space_canvas.z_index = -2
-	var space_material: Variant = ShaderMaterial.new()
-	space_material.shader = preload("res://games/minigame/godot_party_default_star_wave/assets/shaders/deep_space.gdshader")
-	space_canvas.material = space_material
-	add_child(space_canvas)
-	light_canvas = Node2D.new()
-	light_canvas.z_index = -1
-	var light_material: Variant = CanvasItemMaterial.new()
-	light_material.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
-	light_canvas.material = light_material
 	light_canvas.draw.connect(_light_pass)
-	add_child(light_canvas)
 
 func _aura_at(p: Vector2, radius: Vector2, col: Color) -> void:
 	light_canvas.draw_texture_rect(aura,Rect2(p-radius,radius*2),false,col)

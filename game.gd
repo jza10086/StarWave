@@ -1,6 +1,6 @@
 extends "res://games/protocols/godot_party_default_protocol/ranked_round.gd"
 const Arena: Script = preload("res://games/minigame/godot_party_default_star_wave/arena.gd")
-const Visual: Script = preload("res://games/minigame/godot_party_default_star_wave/visual.gd")
+const Display: PackedScene = preload("res://games/minigame/godot_party_default_star_wave/arena_display.tscn")
 var arenas: Array[RefCounted] = []
 var displays: Array[Node2D] = []
 var display_models: Array[RefCounted] = []
@@ -22,16 +22,13 @@ func build_game() -> void:
 	team_mode = settings.get("mode", "个人赛") == "团队赛"
 	hud.hide()
 	for index: int in (2 if team_mode else 1):
-		var surface: Control = Control.new()
-		surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		surface.clip_contents = true
-		stage.add_child(surface)
+		var surface: Control = %Arena if index == 0 else Display.instantiate()
+		if index > 0:
+			stage.add_child(surface)
 		surfaces.append(surface)
-		var visual: Node2D = Visual.new()
+		var visual: Node2D = surface.get_node("Visual")
 		var model: RefCounted = Arena.new()
 		visual.core = model
-		surface.add_child(visual)
 		displays.append(visual)
 		display_models.append(model)
 		surface.resized.connect(_fit.bind(surface, visual))
@@ -149,8 +146,8 @@ func render_game() -> void:
 			elif pilot.bombs < previous_local.bombs:
 				displays[index]._play("bomb")
 			previous_local = pilot.duplicate()
-			lives_label.text = "生命  %d" % pilot.lives
-			score_label.text = "分数  %d" % pilot.score
+			lives_label.text = api.i18n.text(&"hud.lives", {"lives": pilot.lives})
+			score_label.text = api.i18n.text(&"hud.score", {"score": pilot.score})
 
 func _finish_match() -> void:
 	var scores: Dictionary = {}

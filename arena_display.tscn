@@ -1,0 +1,31 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://games/minigame/godot_party_default_star_wave/visual.gd" id="script"]
+[ext_resource type="Shader" path="res://games/minigame/godot_party_default_star_wave/assets/shaders/deep_space.gdshader" id="shader"]
+
+[sub_resource type="ShaderMaterial" id="Space"]
+resource_local_to_scene = true
+shader = ExtResource("shader")
+
+[sub_resource type="CanvasItemMaterial" id="Light"]
+blend_mode = 1
+
+[node name="ArenaDisplay" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+clip_contents = true
+
+[node name="Visual" type="Node2D" parent="."]
+script = ExtResource("script")
+
+[node name="DeepSpace" type="ColorRect" parent="Visual"]
+mouse_filter = 2
+z_index = -2
+offset_right = 1440.0
+offset_bottom = 960.0
+material = SubResource("Space")
+
+[node name="LightPass" type="Node2D" parent="Visual"]
+z_index = -1
+material = SubResource("Light")
