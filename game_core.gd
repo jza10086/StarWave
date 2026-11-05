@@ -16,7 +16,13 @@ const MAX_CANCEL_EFFECTS: Variant = 384
 const MAX_DAMAGE_WAVES: Variant = 4
 const DAMAGE_WAVE_DURATION: Variant = 1.5
 const CANCEL_EFFECT_DURATION: Variant = 0.5
-const BOSS_TIME: Variant = 86.0
+const BOSS_TIME: float = 66.0
+const STAGE_COUNT: int = 3
+const STAGE_NAMES: Array[String] = ["霓虹前哨", "折光航道", "风暴核心"]
+const BOSS_DESIGNS: Array[String] = ["bastion", "tempest", "harbinger"]
+const BOSS_NAMES: Array[String] = ["铁壁守望者", "三相风暴", "终焉花冠"]
+const BOSS_HEALTH: Array[float] = [1800.0, 2400.0, 3200.0]
+var stage_index: int = 1
 const CYAN: Variant = Color("77e9ff")
 const PINK: Variant = Color("ff70c8")
 const GOLD: Variant = Color("ffcd68")
@@ -95,6 +101,7 @@ func reset() -> void:
 	state = "ready"
 	elapsed = 0.0
 	wave = 0
+	stage_index = 1
 	stage_label = "SECTOR 01 · NEON RAIN"
 	focused = false
 	invulnerable = 0.0
@@ -183,37 +190,31 @@ func _step_tick(dt: float, move: Vector2, fire: bool) -> void:
 func _update_stage() -> void:
 	if not _boss_spawned and elapsed >= BOSS_TIME:
 		_spawn_boss()
-	elif not _boss_spawned and elapsed >= _next_wave_time:
+	elif not _boss_spawned and wave < 8 and elapsed >= _next_wave_time:
 		wave += 1
 		_spawn_wave(wave)
 		_next_wave_time += 8.0
 	if not _boss_spawned:
-		if elapsed < 26.0:
-			stage_label = "SECTOR 01 · NEON RAIN"
-		elif elapsed < 58.0:
-			stage_label = "SECTOR 02 · CROSSWIND"
-		else:
-			stage_label = "SECTOR 03 · STORM FRONT"
+		stage_label = STAGE_NAMES[stage_index - 1]
 
+## Each stage teaches its new silhouettes before combining them in eight full waves.
 func _spawn_wave(index: int) -> void:
-	# First teach each new silhouette alone, then alternate formations and mixed roles.
-	# Eight-second wave spacing and 86-second boss arrival remain unchanged.
-	var recipes: Variant = [
-		["scout", "scout", "scout", "scout", "scout"],
-		["sniper"], ["sweeper"], ["orbiter"],
-		["sniper", "scout", "sniper"],
-		["weaver", "sweeper", "weaver"],
-		["orbiter", "gunner"],
-		["sniper", "sweeper", "scout"],
-		["weaver", "orbiter", "weaver"],
-		["sniper", "gunner", "sweeper"],
-		["orbiter", "scout", "sniper"]]
-	var recipe: Array = recipes[(index - 1) % recipes.size()]
-	for i: Variant in range(recipe.size()):
-		var lane: float = float(i + 1) / float(recipe.size() + 1)
-		if recipe.size() == 1:
-			lane = 0.32 if recipe[i] == "sniper" else (0.68 if recipe[i] == "sweeper" else 0.38)
-		_spawn_enemy(recipe[i], Vector2(field_size.x * lane, -48.0 - i * 48.0), i)
+	var stages: Array = [
+		[["scout", "scout", "scout"], ["gunner", "scout"], ["charger", "charger"],
+		["sniper", "scout", "sniper"], ["weaver", "charger"], ["gunner", "weaver", "scout"],
+		["charger", "sniper", "charger"], ["gunner", "charger", "weaver", "gunner"]],
+		[["prism", "prism"], ["sweeper", "scout", "sweeper"], ["lancer", "lancer"],
+		["prism", "sniper", "prism"], ["orbiter", "lancer"], ["weaver", "prism", "weaver"],
+		["lancer", "sweeper", "sniper"], ["prism", "orbiter", "lancer", "prism"]],
+		[["carrier", "carrier"], ["charger", "prism", "charger"], ["orbiter", "lancer", "orbiter"],
+		["carrier", "sniper", "carrier"], ["sweeper", "prism", "lancer"],
+		["carrier", "weaver", "orbiter"], ["charger", "lancer", "prism", "charger"],
+		["carrier", "orbiter", "prism", "lancer", "carrier"]]
+	]
+	var recipe: Array = stages[stage_index - 1][index - 1]
+	for order: int in recipe.size():
+		var lane: float = float(order + 1) / float(recipe.size() + 1)
+		_spawn_enemy(recipe[order], Vector2(field_size.x * lane, -48.0 - order * 36.0), order)
 
 func _spawn_enemy(kind: String, position: Vector2, order: int) -> void:
 	if enemies.size() >= MAX_ENEMIES:
@@ -241,9 +242,25 @@ func _spawn_enemy(kind: String, position: Vector2, order: int) -> void:
 		health = 115.0
 		radius = 29.0
 		speed = 150.0
+	elif kind == "charger":
+		health = 48.0
+		radius = 21.0
+		speed = 210.0
+	elif kind == "prism":
+		health = 95.0
+		radius = 26.0
+		speed = 110.0
+	elif kind == "lancer":
+		health = 90.0
+		radius = 25.0
+		speed = 190.0
+	elif kind == "carrier":
+		health = 180.0
+		radius = 35.0
+		speed = 65.0
 	# All route geometry is normalized once; viewport changes map the complete path.
 	var side: Variant = -1.0 if (order + wave) % 2 == 0 else 1.0
-	if kind == "sweeper" and position.y < 0.0:
+	if kind in ["sweeper", "lancer"] and position.y < 0.0:
 		position = Vector2(-65.0 if side < 0.0 else field_size.x + 65.0, 110.0)
 	enemies.append({"id": _next_id, "type": kind, "pos": position, "origin_x": position.x,
 		"hp": health, "max_hp": health, "radius": radius, "speed": speed,
@@ -316,7 +333,7 @@ func _enemy_route_native(enemy: Dictionary, age: float) -> Vector2:
 	var order: int = enemy["order"]
 	var lane: Variant = clampf(float(enemy["origin_x"]) / field_size.x, 0.20, 0.80)
 	var station: Variant = Vector2(route_field.x * lane, 225.0 + order * 24.0)
-	if kind == "sweeper":
+	if kind in ["sweeper", "lancer"]:
 		var direction: Variant = -side
 		var a: Variant = Vector2(route_field.x * (0.22 if direction > 0 else 0.78), 205.0)
 		var b: Variant = Vector2(route_field.x * (0.78 if direction > 0 else 0.22), 235.0)
@@ -344,6 +361,23 @@ func _enemy_route_native(enemy: Dictionary, age: float) -> Vector2:
 		if age < 5.4: return station+drift*(age-2.1)
 		var end: Variant = station+drift*3.3
 		return _route_segment(end,Vector2(-110 if side < 0 else route_field.x+110,-100),drift,Vector2(side*260,-130),age-5.4,3.4)
+	if kind == "charger":
+		var end: Vector2 = Vector2(route_field.x * (1.0 - lane), 650)
+		var dive: Vector2 = Vector2(-side * 120, 150)
+		if age < 2.1:
+			return _route_segment(start, station, Vector2(0, 200), Vector2.ZERO, age, 2.1)
+		if age < 6.4:
+			return _route_segment(station, end, Vector2.ZERO, dive, age - 2.1, 4.3)
+		return end + dive * (age - 6.4)
+	if kind == "prism":
+		var drift: Vector2 = Vector2(side * 100, 0)
+		if age < 2.1:
+			return _route_segment(start, station, Vector2(0, 180), drift, age, 2.1)
+		var t: float = minf(age - 2.1, 4.3)
+		var end: Vector2 = station + Vector2(side * 100 * sin(t), 28 * (1.0 - cos(t)))
+		if age < 6.4:
+			return end
+		return _route_segment(end, Vector2(route_field.x * lane, -100), Vector2(side * 100 * cos(t), 28 * sin(t)), Vector2(0, -180), age - 6.4, 2.4)
 	# Scouts share mirrored S geometry; their staggered entry height offsets arrival.
 	# Gunners/weavers use the same continuous three-stage grammar at different lanes.
 	var t: Variant = age
@@ -386,6 +420,21 @@ func _enemy_fire(enemy: Dictionary) -> void:
 			_fan(pos, sweep - 0.48, 3, 0.15, 175.0, PINK, 6.0)
 			_fan(pos, sweep + 0.48, 3, 0.15, 175.0, PINK, 6.0)
 			_continue_burst(enemy, 3, 0.34, 2.1)
+		"charger":
+			_fan(pos, aim, 5, 0.17, 210.0, PINK, 4.5)
+			enemy.timer = 1.7
+		"prism":
+			for side: float in [-1.0, 1.0]:
+				for ray: int in 3:
+					_add_bullet(pos, Vector2.from_angle(aim + side * (0.24 + ray * 0.21)) * 160.0, 5.0, CYAN, "orb", side * 0.32)
+			enemy.timer = 1.8
+		"lancer":
+			_fan(pos, aim, 3, 0.10, 330.0, GOLD, 3.5, "needle")
+			_continue_burst(enemy, 3, 0.22, 2.0)
+		"carrier":
+			_gap_ring(pos, 18, float(enemy.attack_index) * 0.15, aim, 0.48, 110.0, GOLD, 7.0)
+			_fan(pos, aim, 3, 0.24, 195.0, PINK, 4.5)
+			enemy.timer = 2.5
 		"orbiter":
 			_gap_ring(pos, 14, float(enemy["age"]) * 0.2, aim, 0.60, 160.0, PURPLE, 6.0)
 			_continue_burst(enemy, 2, 0.45, 2.5)
@@ -412,8 +461,8 @@ func _spawn_boss() -> void:
 	bullets.clear()
 	wave = 12
 	stage_label = "WARNING · HARBINGER"
-	boss = {"id": _next_id, "type": "boss", "name": "HARBINGER", "pos": Vector2(field_size.x * 0.5, -90.0),
-		"hp": 2400.0, "max_hp": 2400.0, "radius": 58.0, "phase": 1, "phase_time": 0.0,
+	boss = {"id": _next_id, "type": "boss", "name": BOSS_NAMES[stage_index - 1], "design": BOSS_DESIGNS[stage_index - 1], "pos": Vector2(field_size.x * 0.5, -90.0),
+		"hp": BOSS_HEALTH[stage_index - 1], "max_hp": BOSS_HEALTH[stage_index - 1], "radius": 58.0, "phase": 1, "phase_time": 0.0,
 		"age": 0.0, "telegraph": 3.0, "timer": 0.4, "aim_timer": 1.6, "flash": 0.0,
 		"pattern_index": 0, "warning_angle": PI * 0.5,
 		"rotation": 0.0, "rotation_speed": 0.28, "bank": 0.0, "iris_rotation": 0.0, "hub_rotation": 0.0,
@@ -431,10 +480,7 @@ func debug_set_boss(phase: int = 1) -> void:
 	boss["age"] = 3.0
 	boss["telegraph"] = 1.2
 	boss["phase"] = clampi(phase, 1, 3)
-	if phase == 2:
-		boss["hp"] = 1550.0
-	elif phase >= 3:
-		boss["hp"] = 760.0
+	boss["hp"] = float(boss.max_hp) * [0.9, 0.6, 0.3][int(boss.phase) - 1]
 	invulnerable = 2.0
 
 func _update_boss(dt: float) -> void:
@@ -481,6 +527,9 @@ func _update_boss(dt: float) -> void:
 	boss["attack_telegraph"] = maxf(0.0, float(boss["attack_telegraph"]) - dt)
 	boss["cycle_time"] += dt
 	var time: float = boss["cycle_time"]
+	if boss.design != "harbinger":
+		_update_sector_pattern(phase, time)
+		return
 	var slot: int = boss["choreography_slot"]
 	# A single score orders reposition, locked needles, full-angle blooms,
 	# rapid spiral, expansion and rest. Internal locks have no visible overlays.
@@ -525,6 +574,44 @@ func _update_boss(dt: float) -> void:
 	if invulnerable <= 0.0 and pos.distance_squared_to(player) < 55.0 * 55.0:
 		_hit_player()
 
+## The first two bosses have separate scores and silhouettes, sharing only lifecycle.
+func _update_sector_pattern(phase: int, time: float) -> void:
+	var beats: Array[float] = [0.0, 1.6, 2.5, 3.4, 4.5, 5.4, 6.4, 9.0]
+	var slot: int = boss.choreography_slot
+	if time < beats[slot]:
+		return
+	var pos: Vector2 = boss.pos
+	if slot == 0:
+		boss.move_from = pos
+		boss.move_to = Vector2(field_size.x * (0.32 if int(boss.pattern_index) % 2 == 0 else 0.68), 215)
+		boss.pattern_index += 1
+		boss.warning_angle = (player - pos).angle()
+	elif slot == 7:
+		boss.cycle_time = 0.0
+		boss.choreography_slot = -1
+	elif player.distance_to(pos) >= 180.0:
+		if boss.design == "bastion":
+			if slot in [1, 2, 3]:
+				for side: float in [-1.0, 1.0]:
+					var muzzle: Vector2 = pos + Vector2(side * 88, 24)
+					_fan(muzzle, float(boss.warning_angle) + side * 0.12, 3 + phase * 2, 0.14, 180 + phase * 15, GOLD, 5.0)
+			else:
+				# Alternating combs leave a wide moving lane through the lower fan.
+				var gap: float = PI * 0.5 + (slot - 5) * 0.3
+				_gap_ring(pos, 20 + phase * 4, slot * 0.08, gap, 0.42, 145 + phase * 8, CYAN, 6.0)
+		else:
+			if slot in [1, 3, 5]:
+				for arm: int in 3:
+					var angle: float = float(boss.rotation) + arm * TAU / 3.0
+					var muzzle: Vector2 = pos + Vector2.from_angle(angle) * 82
+					for ray: int in (4 + phase):
+						var heading: float = angle + (ray - (3.0 + phase) * 0.5) * 0.18
+						_add_bullet(muzzle, Vector2.from_angle(heading) * 180, 5.0, PURPLE, "orb", 0.24 if slot != 3 else -0.24)
+			else:
+				_fan(pos, float(boss.warning_angle), 5 + phase * 2, 0.15, 250, PINK, 3.5, "needle")
+				_gap_ring(pos, 22 + phase * 4, time * 0.18, PI * 0.5, 0.5, 120, PURPLE, 6.0)
+	boss.choreography_slot += 1
+
 ## Quintic pose keys: zero velocity/acceleration at each key, with bounded lag
 ## between the three opposite blade pairs. These are body poses, never warning UI.
 static func _boss_pose_key(time: float, keys: Array) -> float:
@@ -545,6 +632,11 @@ static func boss_opening_at(time: float) -> float:
 		Vector2(10.65,.04), Vector2(11.0,.04), Vector2(14.4,.04)])
 
 func _update_boss_animation(dt: float, previous_position: Vector2) -> void:
+	if boss.design != "harbinger":
+		boss.rotation = wrapf(float(boss.rotation) + dt * (0.35 if boss.design == "bastion" else 0.8 + int(boss.phase) * 0.18), -PI, PI)
+		boss.iris_opening = 0.5 + 0.5 * sin(float(boss.cycle_time) * 2.0)
+		boss.hub_rotation = -float(boss.rotation) * 0.6
+		return
 	var time: float = boss["cycle_time"]
 	var entering: bool = float(boss["telegraph"]) > 0.0
 	var intensity: float = 1.0 + (int(boss["phase"]) - 1) * .12

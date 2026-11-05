@@ -140,11 +140,11 @@ func _aura_at(p: Vector2, radius: Vector2, col: Color) -> void:
 
 func _light_pass() -> void:
 	for e: Variant in core.enemies:
-		var col: Variant = Color("eeb66c") if e.type=="gunner" else Color("af88e7") if e.type=="weaver" else Color("e67eaa")
+		var col: Color = _enemy_color(e.type)
 		_aura_at(e.pos,Vector2.ONE*e.radius*3.4,Color(col,.12))
 	if not core.boss.is_empty() and float(core.boss.hp) > 0.0:
 		var p: Vector2 = core.boss.pos
-		_aura_at(p,Vector2(220,160),Color(.47,.24,1,.24))
+		_aura_at(p, Vector2(220, 160), Color(_boss_color(core.boss.design), 0.24))
 	for shot: Variant in core.shots: _aura_at(shot.pos,Vector2(13,30),Color(CYAN,.27))
 	for b: Variant in core.bullets:
 		var original: Color = b.get("color",Color("ff70c8"))
@@ -484,7 +484,7 @@ func _enemy(e: Dictionary) -> void:
 	if not Rect2(Vector2(-150,-150),FIELD+Vector2(300,300)).has_point(world): return
 	var kind: String = e.get("type","scout")
 	var r: float = e.get("radius",19)
-	var col: Variant = Color("ffc35e") if kind in ["gunner","sniper"] else Color("aa77ff") if kind in ["weaver","orbiter"] else Color("ff77ba")
+	var col: Color = _enemy_color(kind)
 	var squash: Vector2 = Vector2.ONE
 	hit_white = 0.0
 	if hit_poses.has(int(e.id)):
@@ -497,8 +497,13 @@ func _enemy(e: Dictionary) -> void:
 	# Simulation owns the angle: pause freezes it and collision remains at world.
 	draw_set_transform(world, float(e.get("rotation",0.0)), squash)
 	var p: Variant = Vector2.ZERO
+	if kind == "boss" and e.design != "harbinger":
+		_sector_boss(e, world)
+		hit_white = 0.0
+		draw_set_transform(ORIGIN)
+		return
 	if kind=="boss":
-		col = Color("b184ff")
+		col = _boss_color(e.design)
 		# The circle is the unchanged collision field. Everything beyond it is decoration.
 		draw_set_transform(world)
 		_soft_orb(p,r,Color(col,.24))
@@ -527,6 +532,22 @@ func _enemy(e: Dictionary) -> void:
 		draw_set_transform(world,float(e.get("hub_rotation",0.0)),Vector2.ONE*(1+opening*.15))
 		_soft_polygon(_poly(p,20,4,-PI/2),Color(col.lightened(.3),.9))
 		_glyph_edge(PackedVector2Array([Vector2(-8,0),Vector2(0,8),Vector2(8,0),Vector2(0,-8)]),Color("f7e8ff"),1.8)
+	elif kind == "charger":
+		_soft_polygon(PackedVector2Array([Vector2(-r, -r), Vector2(0, r * 1.4), Vector2(r, -r), Vector2(0, -r * 0.35)]), col)
+		_glyph_edge(PackedVector2Array([Vector2(-8, -6), Vector2(0, 15), Vector2(8, -6)]), col.lightened(0.6), 2, false)
+	elif kind == "prism":
+		_soft_polygon(_poly(p, r, 6, PI / 6), col)
+		_glyph_edge(_poly(p, r * 0.55, 3, -PI / 2), col.lightened(0.6), 2)
+		_sigil_arc(p, r * 1.25, float(e.age), float(e.age) + PI, col, 1.3)
+	elif kind == "lancer":
+		_soft_polygon(PackedVector2Array([Vector2(-r * 1.4, -8), Vector2(0, r), Vector2(r * 1.4, -8), Vector2(0, 0)]), col)
+		for side: float in [-1.0, 1.0]:
+			_glyph_edge(PackedVector2Array([Vector2(side * 8, -r), Vector2(side * 8, r * 1.3)]), col.lightened(0.7), 2, false)
+	elif kind == "carrier":
+		_soft_polygon(_poly(p, r, 6, 0), col)
+		for side: float in [-1.0, 1.0]:
+			_soft_polygon(_poly(Vector2(side * r, 5), r * 0.45, 4, 0), col)
+		_glyph_edge(_poly(p, r * 0.55, 6, 0), col.lightened(0.65), 2)
 	elif kind=="sniper":
 		# Long split lance and detached side glyphs, unlike the compact gunner diamond.
 		for side: Variant in [-1,1]:
@@ -560,6 +581,44 @@ func _enemy(e: Dictionary) -> void:
 		_glyph_edge(PackedVector2Array([p+Vector2(-r*.36,0),p+Vector2(0,r*.5),p+Vector2(r*.36,0)]),col.lightened(.65),1.3,false)
 	hit_white = 0.0
 	draw_set_transform(ORIGIN)
+
+func _enemy_color(kind: String) -> Color:
+	match kind:
+		"gunner", "sniper", "carrier": return Color("ffc35e")
+		"weaver", "orbiter": return Color("aa77ff")
+		"prism": return Color("69e8d5")
+		"lancer": return Color("83baff")
+		_: return Color("ff77ba")
+
+func _boss_color(design: String) -> Color:
+	match design:
+		"bastion": return Color("ffc35e")
+		"tempest": return Color("69dfef")
+		_: return Color("b184ff")
+
+## Distinct articulated assemblies share the same central hitbox, not the same skin.
+func _sector_boss(e: Dictionary, world: Vector2) -> void:
+	var color: Color = _boss_color(e.design)
+	draw_set_transform(world)
+	if e.design == "bastion":
+		_soft_polygon(_poly(Vector2.ZERO, 58, 6, PI / 6), color)
+		_glyph_edge(_poly(Vector2.ZERO, 35, 6, PI / 6), color.lightened(0.65), 2)
+		for side: float in [-1.0, 1.0]:
+			draw_set_transform(world + Vector2(side * 88, 24), side * (0.08 + float(e.iris_opening) * 0.14))
+			_soft_polygon(PackedVector2Array([Vector2(-25, -58), Vector2(25, -48), Vector2(31, 35), Vector2(0, 55), Vector2(-31, 35)]), color)
+			_glyph_edge(PackedVector2Array([Vector2(-10, -24), Vector2(-10, 28), Vector2(10, 28), Vector2(10, -24)]), Color("fff1cb"), 2, false)
+		draw_set_transform(world, float(e.hub_rotation))
+		_soft_polygon(_poly(Vector2.ZERO, 19, 4, 0), Color("fff1cb"))
+	else:
+		for arm: int in 3:
+			var angle: float = float(e.rotation) + arm * TAU / 3.0
+			draw_set_transform(world + Vector2.from_angle(angle) * 82, angle)
+			_soft_polygon(PackedVector2Array([Vector2(-32, -20), Vector2(48, 0), Vector2(-32, 20), Vector2(-12, 0)]), color)
+			_glyph_edge(PackedVector2Array([Vector2(-10, -11), Vector2(25, 0), Vector2(-10, 11)]), color.lightened(0.7), 2, false)
+		draw_set_transform(world, float(e.hub_rotation))
+		_soft_polygon(_poly(Vector2.ZERO, 58, 3, -PI / 2), color)
+		_glyph_edge(_poly(Vector2.ZERO, 34, 3, PI / 2), color.lightened(0.7), 2)
+		_soft_orb(Vector2.ZERO, 9, color)
 
 func _player(color: Color) -> void:
 	var p: Vector2 = core.player

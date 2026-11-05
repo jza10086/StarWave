@@ -83,7 +83,7 @@ func tick_game(delta: float) -> void:
 			victory_outro += delta
 			if victory_outro >= 0.7:
 				_finish_match()
-		elif ended or elapsed >= float(settings.get("duration", 180)):
+		elif ended or elapsed >= float(settings.get("duration", 480)):
 			_finish_match()
 	# Stop prediction after the existing 150 ms horizon if snapshots stall.
 	var presentation_delta: float = minf(delta, maxf(0.0, 0.15 - visual_age))
@@ -113,7 +113,7 @@ func make_snapshot() -> Dictionary:
 	for arena: RefCounted in arenas:
 		snapshots.append(arena.snapshot())
 	var raw: PackedByteArray = var_to_bytes(snapshots)
-	return {"arenas": raw.compress(FileAccess.COMPRESSION_DEFLATE), "size": raw.size(), "time": maxf(0, float(settings.get("duration", 180)) - elapsed)}
+	return {"arenas": raw.compress(FileAccess.COMPRESSION_DEFLATE), "size": raw.size(), "time": maxf(0, float(settings.get("duration", 480)) - elapsed)}
 
 func render_game() -> void:
 	if view.is_empty() or not view.get("arenas") is PackedByteArray or int(view.get("size", 0)) > 4000000:
@@ -155,9 +155,9 @@ func _finish_match() -> void:
 	for arena: RefCounted in arenas:
 		for id: String in arena.pilots:
 			var pilot: Dictionary = arena.pilots[id]
-			scores[id] = roundi(arena.survival * 1000) if team_mode else pilot.score
-			metrics[id] = {"score": pilot.score, "kills": pilot.kills, "hurt": pilot.hurt, "boss_damage": floori(pilot.boss_damage), "time": roundi(arena.survival * 1000), "team": int(team_by_player[id]) + 1}
-	finish_scores(scores, metrics, [{"key": "score", "title": "积分", "format": "integer"}, {"key": "time", "title": "战场生存", "format": "time"}, {"key": "kills", "title": "击败敌人", "format": "integer"}, {"key": "hurt", "title": "受伤", "format": "integer"}, {"key": "boss_damage", "title": "Boss伤害", "format": "integer"}])
+			scores[id] = (1000000000 if arena.state == "won" else roundi(arena.survival * 1000)) if team_mode else pilot.score
+			metrics[id] = {"score": pilot.score, "kills": pilot.kills, "hurt": pilot.hurt, "boss_damage": floori(pilot.boss_damage), "stages": arena.cleared_stages, "time": roundi(arena.survival * 1000), "team": int(team_by_player[id]) + 1}
+	finish_scores(scores, metrics, [{"key": "stages", "title": "通过关卡", "format": "integer"}, {"key": "score", "title": "积分", "format": "integer"}, {"key": "time", "title": "战场生存", "format": "time"}, {"key": "kills", "title": "击败敌人", "format": "integer"}, {"key": "hurt", "title": "受伤", "format": "integer"}, {"key": "boss_damage", "title": "Boss伤害", "format": "integer"}])
 
 func player_left(id: String) -> void:
 	if team_by_player.has(id):

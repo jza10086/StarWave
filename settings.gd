@@ -20,7 +20,7 @@ static func schema() -> Dictionary:
 			},
 			"duration": {
 				"type": "int",
-				"default": 180,
+				"default": 480,
 				"title": "比赛时限（秒）",
 				"audience": "room",
 				"apply": "next_round",

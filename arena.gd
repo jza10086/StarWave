@@ -6,7 +6,8 @@ var owner: String = ""
 var team_mode: bool = false
 var survival: float = 0.0
 var cleared: bool = false
-var cycle: int = 0
+var cleared_stages: int = 0
+var transition_time: float = 0.0
 var feedback_sequence: int = 0
 # Display-only positions survive authoritative snapshot replacement.
 var pilot_draw_positions: Dictionary = {}
@@ -113,14 +114,22 @@ func advance(dt: float) -> void:
 		player = pilot.pos
 		power = pilot.power
 		focused = pilot.focus
-		if pilot.fire and pilot.timer <= 0:
+		if not cleared and pilot.fire and pilot.timer <= 0:
 			_fire_player()
 			pilot.timer = 0.095
-		if pilot.bomb and not pilot.latch and pilot.bombs > 0:
+		if not cleared and pilot.bomb and not pilot.latch and pilot.bombs > 0:
 			_bomb(id)
 		pilot.latch = pilot.bomb
 	if alive.is_empty():
 		state = "lost"
+		return
+	if cleared:
+		shots.clear()
+		transition_time -= dt
+		_update_effects(dt)
+		_update_shared_pickups(dt)
+		if transition_time <= 0.0:
+			_begin_next_stage()
 		return
 	# Target alternates deterministically; invulnerability disables original single-pilot contacts.
 	player = pilots[alive[int(survival / 2.0) % alive.size()]].pos
@@ -174,25 +183,37 @@ func advance(dt: float) -> void:
 	_update_shared_pickups(dt)
 	_update_effects(dt)
 	if cleared:
-		if team_mode:
-			cycle += 1
-			elapsed = 0
-			_next_wave_time = 1.8
-			_boss_spawned = false
-			boss = {}
-			cleared = false
-		else:
-			state = "won"
+		shots.clear()
+
+## Keep player progression and IDs across stages, but no hostile state crosses the boundary.
+func _begin_next_stage() -> void:
+	stage_index += 1
+	elapsed = 0.0
+	wave = 0
+	_next_wave_time = 1.8
+	_boss_spawned = false
+	boss = {}
+	cleared = false
+	transition_time = 0.0
+	shots.clear()
+	damage_waves.clear()
+	for pilot: Dictionary in pilots.values():
+		if pilot.lives > 0:
+			pilot.lives = mini(3, pilot.lives + 1)
+			pilot.bombs = mini(5, pilot.bombs + 1)
+			pilot.invulnerable = 2.0
+	_add_effect(FIELD * 0.5, "stage", 180, 1.0)
 
 func _spawn_enemy(kind: String, position_value: Vector2, order: int) -> void:
+	if enemies.size() >= MAX_ENEMIES:
+		return
 	super._spawn_enemy(kind, position_value, order)
-	if not enemies.is_empty():
-		enemies.back().hp *= maxf(1, pilots.size() * 0.7) * (1.0 + cycle * 0.3)
-		enemies.back().max_hp = enemies.back().hp
+	enemies.back().hp *= maxf(1.0, pilots.size() * 0.7)
+	enemies.back().max_hp = enemies.back().hp
 
 func _spawn_boss() -> void:
 	super._spawn_boss()
-	boss.hp *= maxf(1, pilots.size() * 0.7) * (1.0 + cycle * 0.3)
+	boss.hp *= maxf(1.0, pilots.size() * 0.7)
 	boss.max_hp = boss.hp
 
 func _add_shot(position_value: Vector2, velocity: Vector2, damage: float) -> void:
@@ -254,7 +275,13 @@ func _bomb(id: String) -> void:
 			_win()
 
 func _win() -> void:
+	if cleared:
+		return
 	cleared = true
+	cleared_stages += 1
+	transition_time = 2.2
+	if stage_index == STAGE_COUNT:
+		state = "won"
 	bullets.clear()
 	enemies.clear()
 	_add_effect(boss.pos, "victory", 360, 2.5)
@@ -278,7 +305,7 @@ func _update_shared_pickups(dt: float) -> void:
 			pickups.remove_at(index)
 
 func snapshot() -> Dictionary:
-	var result: Dictionary = {"pilots": pilots.duplicate(true), "state": state, "survival": survival}
+	var result: Dictionary = {"pilots": pilots.duplicate(true), "state": state, "survival": survival, "stage_index": stage_index, "cleared_stages": cleared_stages, "cleared": cleared, "transition_time": transition_time}
 	for key: String in ["enemies", "boss", "shots", "bullets", "pickups", "effects", "damage_waves", "cancel_effects"]:
 		result[key] = get(key).duplicate(true)
 	for bullet: Dictionary in result.bullets:
