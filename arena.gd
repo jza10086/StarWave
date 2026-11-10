@@ -1,4 +1,4 @@
-extends "res://games/minigame/godot_party_default_star_wave/game_core.gd"
+extends "res://games/minigame/gp_star_wave/game_core.gd"
 ## Host simulation: one arena contains all pilots, enemies, pickups and projectiles.
 ## Original enemy routes/boss choreography remain in game_core; ownership is explicit here.
 var pilots: Dictionary = {}

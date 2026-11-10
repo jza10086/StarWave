@@ -1,6 +1,6 @@
 extends Node2D
 
-const Core: Variant = preload("res://games/minigame/godot_party_default_star_wave/game_core.gd")
+const Core: Variant = preload("res://games/minigame/gp_star_wave/game_core.gd")
 const FONT: Variant = preload("res://games/protocols/godot_party_default_protocol/fonts/NotoSansSC-UI.otf")
 const ORIGIN: Variant = Vector2.ZERO
 var FIELD: Variant = Vector2(1440, 960)
@@ -789,7 +789,7 @@ func _setup_ribbons() -> void:
 	canvas.multimesh = ribbons
 	canvas.z_index = -1
 	var material: ShaderMaterial = ShaderMaterial.new()
-	material.shader = preload("res://games/minigame/godot_party_default_star_wave/assets/shaders/ribbon.gdshader")
+	material.shader = preload("res://games/minigame/gp_star_wave/assets/shaders/ribbon.gdshader")
 	canvas.material = material
 	add_child(canvas)
 

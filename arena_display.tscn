@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://games/minigame/godot_party_default_star_wave/visual.gd" id="script"]
-[ext_resource type="Shader" path="res://games/minigame/godot_party_default_star_wave/assets/shaders/deep_space.gdshader" id="shader"]
+[ext_resource type="Script" path="res://games/minigame/gp_star_wave/visual.gd" id="script"]
+[ext_resource type="Shader" path="res://games/minigame/gp_star_wave/assets/shaders/deep_space.gdshader" id="shader"]
 
 [sub_resource type="ShaderMaterial" id="Space"]
 resource_local_to_scene = true

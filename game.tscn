@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://dwadlj1gn5kb5"]
 
-[ext_resource type="Script" uid="uid://cfryfayl5kb57" path="res://games/minigame/godot_party_default_star_wave/game.gd" id="1"]
+[ext_resource type="Script" uid="uid://cfryfayl5kb57" path="res://games/minigame/gp_star_wave/game.gd" id="1"]
 [ext_resource type="PackedScene" path="res://games/protocols/godot_party_default_protocol/ranked_round.tscn" id="round"]
 
-[ext_resource type="PackedScene" path="res://games/minigame/godot_party_default_star_wave/arena_display.tscn" id="display"]
+[ext_resource type="PackedScene" path="res://games/minigame/gp_star_wave/arena_display.tscn" id="display"]
 
 [node name="Game" unique_id=234476643 groups=["party_minimal_hud"] instance=ExtResource("round")]
 layout_mode = 3
