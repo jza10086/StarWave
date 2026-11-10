@@ -970,6 +970,7 @@ func _cancel_bullet(bullet: Dictionary, position: Vector2, origin: Vector2, init
 		remnant = _cancel_pool.pop_back()
 	else:
 		remnant = {}
+	remnant.erase("_net_id")
 	remnant["pos"] = position
 	remnant["radius"] = bullet.get("radius",6.0)
 	remnant["color"] = bullet.get("color",PINK)

@@ -6,6 +6,19 @@ var displays: Array[Node2D] = []
 var display_models: Array[RefCounted] = []
 var team_by_player: Dictionary = {}
 var accumulated: float = 0.0
+var network_clock: float = 0.0
+const COLLECTIONS: Array[String] = ["enemies", "boss", "shots", "bullets", "pickups", "effects", "damage_waves", "cancel_effects"]
+var _next_entity: int = 0
+var _published: Dictionary = {}
+var _event_revisions: Dictionary = {}
+var _received_events: Dictionary = {}
+var _entities: Dictionary = {}
+var _input_sequence: int = 0
+var _input_sequences: Dictionary = {}
+var _motion_sequence: int = 0
+var _received_motion: int = 0
+var _pending_motion: Dictionary = {}
+var _bomb_down: bool = false
 var input_clock: float = 0.0
 var previous_action: Dictionary = {}
 var team_mode: bool = false
@@ -64,16 +77,34 @@ func tick_game(delta: float) -> void:
 	var focus: bool = api.input.is_pressed(&"star_focus")
 	var action: Dictionary = {"move": movement, "fire": not api.input.input_blocked and get_window().has_focus() and (bool(api.config.get_own(&"auto_fire", true)) or api.input.is_pressed(&"star_fire")), "focus": focus, "bomb": api.input.is_pressed(&"star_bomb")}
 	input_clock += delta
-	if action != previous_action or input_clock >= 0.033:
+	if action.bomb and not _bomb_down:
+		send_action({"kind": "bomb"})
+	_bomb_down = action.bomb
+	if not running:
+		return
+	if input_clock >= 0.05 or (movement == Vector2.ZERO and previous_action.get("move", Vector2.ZERO) != Vector2.ZERO):
 		input_clock = 0.0
 		previous_action = action
-		send_action(action)
+		_input_sequence += 1
+		action["seq"] = _input_sequence
+		action.bomb = false
+		if not local_id.is_empty():
+			var error: Error = api.net.send_to_host(&"star/input", action, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE_ORDERED, 1)
+			if error != OK:
+				_transport_failed(error)
+				return
 	if api.is_host():
 		accumulated += delta
 		while accumulated >= 1.0 / 120.0:
 			for arena: RefCounted in arenas:
 				arena.advance(1.0 / 120.0)
 			accumulated -= 1.0 / 120.0
+		network_clock += delta
+		if network_clock >= 0.05:
+			network_clock = 0.0
+			publish()
+			if not running:
+				return
 		var ended: bool = true
 		for arena: RefCounted in arenas:
 			if arena.state == "playing":
@@ -85,20 +116,22 @@ func tick_game(delta: float) -> void:
 				_finish_match()
 		elif ended or elapsed >= float(settings.get("duration", 480)):
 			_finish_match()
-	# Stop prediction after the existing 150 ms horizon if snapshots stall.
-	var presentation_delta: float = minf(delta, maxf(0.0, 0.15 - visual_age))
+	# Only pilot extrapolation has a short horizon. Scripted visual timelines run locally.
+	var pilot_delta: float = minf(delta, maxf(0.0, 0.15 - visual_age))
 	visual_age += delta
 	for model: RefCounted in display_models:
-		if presentation_delta > 0.0:
-			var remaining: float = presentation_delta
-			while remaining > 0.0:
-				var step: float = minf(remaining, 1.0 / 120.0)
-				model.advance_presentation(step)
-				remaining -= step
-			model.advance_pilots(presentation_delta, local_id, movement, focus)
-			for collection: Array in [model.bullets, model.shots]:
-				for projectile: Dictionary in collection:
-					projectile.pos += Vector2(projectile.vel) * presentation_delta
+		var remaining: float = delta
+		while remaining > 0.0:
+			var step: float = minf(remaining, 1.0 / 120.0)
+			model.advance_presentation(step)
+			for projectile: Dictionary in model.bullets:
+				model.advance_projectile(projectile, step, true)
+			for projectile: Dictionary in model.shots:
+				model.advance_projectile(projectile, step, false)
+			remaining -= step
+		if pilot_delta > 0.0:
+			model.advance_pilots(pilot_delta, local_id, movement, focus)
+
 	for visual: Node2D in displays:
 		visual.muted = not bool(api.config.get_own(&"sound", true))
 		visual.visual_time += delta
@@ -106,48 +139,26 @@ func tick_game(delta: float) -> void:
 		visual.queue_redraw()
 
 func handle_action(id: String, data: Dictionary) -> void:
-	arenas[team_by_player[id]].set_input(id, data)
-
-func make_snapshot() -> Dictionary:
-	var snapshots: Array = []
-	for arena: RefCounted in arenas:
-		snapshots.append(arena.snapshot())
-	var raw: PackedByteArray = var_to_bytes(snapshots)
-	return {"arenas": raw.compress(FileAccess.COMPRESSION_DEFLATE), "size": raw.size(), "time": maxf(0, float(settings.get("duration", 480)) - elapsed)}
+	if data.get("kind") == "bomb":
+		arenas[team_by_player[id]].request_bomb(id)
 
 func render_game() -> void:
-	if view.is_empty() or not view.get("arenas") is PackedByteArray or int(view.get("size", 0)) > 4000000:
+	if local_id.is_empty() or not team_by_player.has(local_id):
 		return
-	if int(view.get("_sequence", -1)) == rendered_sequence:
+	var model: RefCounted = display_models[team_by_player[local_id]]
+	if not model.pilots.has(local_id):
 		return
-	rendered_sequence = view._sequence
-	visual_age = 0.0
-	var decoded: Variant = bytes_to_var(view.arenas.decompress(int(view.size), FileAccess.COMPRESSION_DEFLATE))
-	if not decoded is Array or decoded.size() != displays.size():
-		return
-	for index: int in decoded.size():
-		var snap: Dictionary = decoded[index]
-		for key: String in snap:
-			if key == "pilots":
-				display_models[index].receive_pilots(snap.pilots)
-			else:
-				display_models[index].set(key, snap[key])
-		displays[index].muted = not bool(api.config.get_own(&"sound", true))
-		displays[index].consume_feedback(snap.effects)
-		for id: String in snap.pilots:
-			if id != local_id:
-				continue
-			var pilot: Dictionary = snap.pilots[id]
-			displays[index].muted = not bool(api.config.get_own(&"sound", true))
-			if previous_local.is_empty():
-				displays[index]._play("start")
-			elif pilot.lives < previous_local.lives:
-				displays[index]._play("hurt")
-			elif pilot.bombs < previous_local.bombs:
-				displays[index]._play("bomb")
-			previous_local = pilot.duplicate()
-			lives_label.text = api.i18n.text(&"hud.lives", {"lives": pilot.lives})
-			score_label.text = api.i18n.text(&"hud.score", {"score": pilot.score})
+	var pilot: Dictionary = model.pilots[local_id]
+	var visual: Node2D = displays[team_by_player[local_id]]
+	if previous_local.is_empty():
+		visual._play("start")
+	elif pilot.lives < previous_local.lives:
+		visual._play("hurt")
+	elif pilot.bombs < previous_local.bombs:
+		visual._play("bomb")
+	previous_local = pilot.duplicate()
+	lives_label.text = api.i18n.text(&"hud.lives", {"lives": pilot.lives})
+	score_label.text = api.i18n.text(&"hud.score", {"score": pilot.score})
 
 func _finish_match() -> void:
 	var scores: Dictionary = {}
@@ -162,3 +173,206 @@ func _finish_match() -> void:
 func player_left(id: String) -> void:
 	if team_by_player.has(id):
 		arenas[team_by_player[id]].pilots[id].lives = 0
+
+## Stable births/deaths and changed facts are reliable. Projectile trajectories never repeat.
+func publish() -> void:
+	if not running or not api.is_host():
+		return
+	_motion_sequence += 1
+	for index: int in arenas.size():
+		var arena: RefCounted = arenas[index]
+		var previous: Dictionary = _published.get(index, {"facts": {}, "pilots": {}, "objects": {}})
+		var facts: Dictionary = {}
+		var saved_facts: Dictionary = {}
+		for field: String in ["state", "stage_index", "cleared_stages", "cleared", "stage_label"]:
+			saved_facts[field] = arena.get(field)
+			if not previous.facts.has(field) or previous.facts[field] != saved_facts[field]:
+				facts[field] = saved_facts[field]
+		var pilot_events: Dictionary = {}
+		var pilot_motion: Dictionary = {}
+		var saved_pilots: Dictionary = {}
+		for id: String in arena.pilots:
+			var pilot: Dictionary = arena.pilots[id]
+			var old: Dictionary = previous.pilots.get(id, {})
+			var changes: Dictionary = {}
+			var saved: Dictionary = {}
+			for field: String in ["name", "color", "lives", "bombs", "power", "score", "kills", "hurt", "boss_damage"]:
+				saved[field] = pilot[field]
+				if not old.has(field) or old[field] != pilot[field]:
+					changes[field] = pilot[field]
+			if old.is_empty() or pilot.invulnerable > old.invulnerable:
+				changes["invulnerable"] = pilot.invulnerable
+			saved["invulnerable"] = pilot.invulnerable
+			if old.is_empty():
+				changes["pos"] = pilot.pos
+				changes["move"] = Vector2.ZERO
+				changes["focus"] = false
+			if not changes.is_empty():
+				pilot_events[id] = changes
+			saved_pilots[id] = saved
+			pilot_motion[id] = {"pos": pilot.pos, "move": pilot.move, "focus": pilot.focus}
+		var spawned: Array = []
+		var updated: Array = []
+		var live: Dictionary = {}
+		for collection: String in COLLECTIONS:
+			var values: Array = ([arena.boss] if not arena.boss.is_empty() else []) if collection == "boss" else arena.get(collection)
+			for object: Dictionary in values:
+				if not object.has("_net_id"):
+					_next_entity += 1
+					object["_net_id"] = _next_entity
+				var id: int = object._net_id
+				var old: Dictionary = previous.objects.get(id, {})
+				var tracked: Dictionary = {}
+				if collection in ["enemies", "boss"]:
+					for field: String in ["hp", "stage", "phase", "warning_angle", "attack_allowed", "attack_index", "choreography_slot", "move_from", "move_to", "phrase"]:
+						if object.has(field):
+							tracked[field] = object[field]
+				live[id] = {"collection": collection, "facts": tracked, "telegraph": object.get("telegraph", 0.0), "attack_telegraph": object.get("attack_telegraph", 0.0)}
+				if old.is_empty():
+					var initial: Dictionary = object.duplicate(true)
+					for field: String in ["passed_waves", "previous", "damage", "timer", "aim_timer", "grazed", "burst_left", "spiral_tick"]:
+						initial.erase(field)
+					spawned.append({"id": id, "collection": collection, "data": initial})
+				else:
+					var changes: Dictionary = {}
+					for field: String in tracked:
+						if not old.facts.has(field) or old.facts[field] != tracked[field]:
+							changes[field] = tracked[field]
+					for timer: String in ["telegraph", "attack_telegraph"]:
+						if object.has(timer) and float(object[timer]) > float(old[timer]):
+							changes[timer] = object[timer]
+					if changes.has("phase") or changes.has("choreography_slot"):
+						for field: String in ["cycle_time", "telegraph", "phase_time", "pattern_rotation"]:
+							if object.has(field):
+								changes[field] = object[field]
+					if not changes.is_empty():
+						updated.append({"id": id, "data": changes})
+		var removed: Array[int] = []
+		for id: int in previous.objects:
+			if not live.has(id):
+				removed.append(id)
+		var revision_value: int = _event_revisions.get(index, 0)
+		if not facts.is_empty() or not pilot_events.is_empty() or not spawned.is_empty() or not updated.is_empty() or not removed.is_empty():
+			revision_value += 1
+			_event_revisions[index] = revision_value
+			var event: Dictionary = {"arena": index, "revision": revision_value, "at_msec": api.net.host_time_msec(),
+				"facts": facts, "pilots": pilot_events, "spawned": spawned, "updated": updated, "removed": removed}
+			if not _send_arena(index, &"star/events", event, MultiplayerPeer.TRANSFER_MODE_RELIABLE, 0):
+				return
+		_published[index] = {"facts": saved_facts, "pilots": saved_pilots, "objects": live}
+		if not _send_arena(index, &"star/motion", {"arena": index, "revision": revision_value,
+			"sample": _motion_sequence, "pilots": pilot_motion}, MultiplayerPeer.TRANSFER_MODE_UNRELIABLE_ORDERED, 2):
+			return
+
+func _send_arena(index: int, topic: StringName, payload: Dictionary, mode: MultiplayerPeer.TransferMode, channel: int) -> bool:
+	for player: Dictionary in api.get_room_players():
+		if not player.connected or int(team_by_player.get(player.player_id, 0)) != index:
+			continue
+		var error: Error = api.net.send_to_player(player.player_id, topic, payload, mode, channel)
+		if error != OK:
+			_transport_failed(error)
+			return false
+	return true
+
+func _message(sender: Dictionary, topic: StringName, payload: Variant) -> void:
+	if topic not in [&"star/input", &"star/events", &"star/motion"]:
+		super._message(sender, topic, payload)
+		return
+	if not running or not payload is Dictionary:
+		return
+	if topic == &"star/input":
+		if not api.is_host() or not payload.get("seq") is int:
+			return
+		for player: Dictionary in api.get_players():
+			var id: String = player.player_id
+			if player.connected and id in sender.player_ids and not disconnected.has(id) and payload.seq > int(_input_sequences.get(id, 0)):
+				_input_sequences[id] = payload.seq
+				arenas[team_by_player[id]].set_input(id, payload)
+				return
+		return
+	if sender.peer_id != 1 or not payload.get("arena") is int or payload.arena < 0 or payload.arena >= display_models.size() or not payload.get("revision") is int:
+		return
+	var index: int = payload.arena
+	var last: int = _received_events.get(index, 0)
+	if topic == &"star/motion":
+		if not payload.get("sample") is int or payload.sample <= _received_motion or not payload.get("pilots") is Dictionary or payload.revision < last:
+			return
+		_received_motion = payload.sample
+		if payload.revision > last:
+			_pending_motion = payload
+		else:
+			_apply_motion(payload)
+		return
+	if payload.revision <= last:
+		return
+	if payload.revision != last + 1 or not payload.get("facts") is Dictionary or not payload.get("pilots") is Dictionary or not payload.get("spawned") is Array or not payload.get("updated") is Array or not payload.get("removed") is Array or not payload.get("at_msec") is int:
+		_transport_failed(ERR_INVALID_DATA)
+		return
+	var model: RefCounted = display_models[index]
+	for key: String in payload.facts:
+		if key not in ["state", "stage_index", "cleared_stages", "cleared", "stage_label"]:
+			return
+		model.set(key, payload.facts[key])
+	for id: String in payload.pilots:
+		if not team_by_player.has(id) or not payload.pilots[id] is Dictionary:
+			return
+		if not model.pilots.has(id):
+			model.pilots[id] = {}
+		model.pilots[id].merge(payload.pilots[id], true)
+		if not model.pilot_draw_positions.has(id):
+			model.pilot_draw_positions[id] = model.pilots[id].pos
+	var delay: float = clampf(float(api.net.host_time_msec() - payload.at_msec) / 1000.0, 0.0, 1.0)
+	for entry: Variant in payload.spawned:
+		if not entry is Dictionary or not entry.get("id") is int or entry.get("collection") not in COLLECTIONS or not entry.get("data") is Dictionary:
+			_transport_failed(ERR_INVALID_DATA)
+			return
+		var object: Dictionary = entry.data.duplicate(true)
+		_entities[entry.id] = {"arena": index, "collection": entry.collection, "data": object}
+		if entry.collection == "boss":
+			model.boss = object
+		else:
+			model.get(entry.collection).append(object)
+		if entry.collection in ["bullets", "shots"]:
+			model.advance_projectile(object, delay, entry.collection == "bullets")
+		elif object.has("age"):
+			object.age += delay
+			if entry.collection == "enemies":
+				object.pos = model.enemy_route_position(object, object.age)
+			elif entry.collection == "pickups":
+				object.pos.y += delay * 82.0
+		if entry.collection == "effects":
+			displays[index].consume_feedback([object])
+	for entry: Variant in payload.updated:
+		if not entry is Dictionary or not entry.get("id") is int or not entry.get("data") is Dictionary:
+			return
+		if _entities.has(entry.id):
+			_entities[entry.id].data.merge(entry.data, true)
+	for id: Variant in payload.removed:
+		if not id is int:
+			return
+		if _entities.has(id):
+			var entry: Dictionary = _entities[id]
+			if entry.collection == "boss":
+				model.boss = {}
+			else:
+				model.get(entry.collection).erase(entry.data)
+			_entities.erase(id)
+	_received_events[index] = payload.revision
+	if not _pending_motion.is_empty() and _pending_motion.revision <= payload.revision:
+		if _pending_motion.revision == payload.revision:
+			_apply_motion(_pending_motion)
+		_pending_motion.clear()
+	render_game()
+
+func _apply_motion(payload: Dictionary) -> void:
+	var model: RefCounted = display_models[payload.arena]
+	for id: String in payload.pilots:
+		var motion: Variant = payload.pilots[id]
+		if not model.pilots.has(id) or not motion is Dictionary or not motion.get("pos") is Vector2 or not motion.pos.is_finite() or not motion.get("move") is Vector2 or not motion.move.is_finite() or not motion.get("focus") is bool:
+			continue
+		model.pilots[id].merge(motion, true)
+	visual_age = 0.0
+
+func _transport_failed(error: Error) -> void:
+	party_stop(&"star_transport")
+	api.fail("star_transport", error_string(error))

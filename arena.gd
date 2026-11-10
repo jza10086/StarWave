@@ -9,7 +9,7 @@ var cleared: bool = false
 var cleared_stages: int = 0
 var transition_time: float = 0.0
 var feedback_sequence: int = 0
-# Display-only positions survive authoritative snapshot replacement.
+# Display positions reconcile to received pilot targets.
 var pilot_draw_positions: Dictionary = {}
 
 func configure(roster: Array, team: bool) -> void:
@@ -22,7 +22,7 @@ func configure(roster: Array, team: bool) -> void:
 		pilots[entry.id] = {"name": entry.name, "color": entry.color, "pos": Vector2(FIELD.x * (index + 1) / (roster.size() + 1), FIELD.y - 150), "lives": 3, "bombs": 3, "power": 1, "invulnerable": 1.8, "timer": 0.0, "score": 0, "kills": 0, "hurt": 0, "boss_damage": 0.0, "move": Vector2.ZERO, "fire": false, "focus": false, "bomb": false, "latch": false, "last_input": 0.0}
 		pilot_draw_positions[entry.id] = pilots[entry.id].pos
 
-## Advance only a received display copy between 10 Hz snapshots.
+## Advance local presentation from spawn parameters; this never runs collisions or spawning.
 ## No spawning, collision, damage, rewards or gameplay timers run on this path.
 func advance_presentation(dt: float) -> void:
 	if state != "playing":
@@ -30,6 +30,7 @@ func advance_presentation(dt: float) -> void:
 	for enemy: Dictionary in enemies:
 		enemy.age += dt
 		enemy.flash = maxf(0.0, float(enemy.flash) - dt)
+		enemy.telegraph = maxf(0.0, float(enemy.telegraph) - dt)
 		enemy.pos = enemy_route_position(enemy, enemy.age)
 		enemy.velocity = (enemy_route_position(enemy, enemy.age + 0.002) - enemy_route_position(enemy, maxf(0.0, enemy.age - 0.002))) / 0.004
 		var bank: float = clampf(-Vector2(enemy.velocity).x / 520.0, -0.30, 0.30)
@@ -38,6 +39,7 @@ func advance_presentation(dt: float) -> void:
 		var previous_position: Vector2 = boss.pos
 		boss.age += dt
 		boss.flash = maxf(0.0, float(boss.flash) - dt)
+		boss.attack_telegraph = maxf(0.0, float(boss.attack_telegraph) - dt)
 		if float(boss.telegraph) > 0.0:
 			boss.pos = Vector2(boss.pos).lerp(Vector2(field_size.x * 0.5, 205.0), 1.0 - exp(-2.4 * dt))
 		elif boss.has("move_from") and int(boss.choreography_slot) != 0:
@@ -56,7 +58,7 @@ func advance_presentation(dt: float) -> void:
 	_update_damage_waves(dt)
 	_update_cancel_effects(dt)
 
-## A snapshot updates simulation targets, never teleports an existing displayed pilot.
+## New pilot targets preserve an existing displayed position.
 func receive_pilots(snapshot_pilots: Dictionary) -> void:
 	pilots = snapshot_pilots
 	for id: String in pilots:
@@ -345,3 +347,29 @@ func _update_shots(dt: float) -> void:
 		if consumed or pos.y < -60.0 or pos.x < -60.0 or pos.x > field_size.x + 60.0:
 			shots.remove_at(i)
 
+
+## Integrate known projectile trajectories locally without resolving gameplay contacts.
+func advance_projectile(projectile: Dictionary, dt: float, bullet: bool) -> void:
+	var velocity: Vector2 = projectile.vel
+	if not bullet:
+		projectile.pos += velocity * dt
+		return
+	var age: float = projectile.age
+	var curve: float = projectile.get("angular_velocity", 0.0)
+	var curve_dt: float = minf(dt, maxf(0.0, float(projectile.get("curve_duration", 3.0)) - age))
+	if projectile.has("speed_end"):
+		var travel: float = bullet_travel_at(projectile, age + dt) - bullet_travel_at(projectile, age)
+		projectile.pos += velocity.normalized() * travel
+		var u: float = clampf((age + dt - float(projectile.accel_delay)) / float(projectile.accel_duration), 0.0, 1.0)
+		projectile.vel = velocity.normalized() * lerpf(projectile.speed_start, projectile.speed_end, u * u * (3.0 - 2.0 * u))
+	elif absf(curve) > 0.00001 and curve_dt > 0.0:
+		var turned: Vector2 = velocity.rotated(curve * curve_dt)
+		projectile.pos += Vector2(turned.y - velocity.y, velocity.x - turned.x) / curve + turned * (dt - curve_dt)
+		projectile.vel = turned
+	else:
+		projectile.pos += velocity * dt
+	projectile.age = age + dt
+
+func request_bomb(id: String) -> void:
+	if state == "playing" and not cleared and pilots.has(id) and pilots[id].lives > 0 and pilots[id].bombs > 0:
+		_bomb(id)
