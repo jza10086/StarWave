@@ -1,11 +1,14 @@
 [gd_scene format=3 uid="uid://dwadlj1gn5kb5"]
 
+[ext_resource type="PackedScene" path="res://games/minigame/gp_star_wave/ui/round_pages.tscn" id="protocol_pages"]
+
 [ext_resource type="Script" uid="uid://cfryfayl5kb57" path="res://games/minigame/gp_star_wave/game.gd" id="1"]
 [ext_resource type="PackedScene" path="res://games/protocols/godot_party_default_protocol/ranked_round.tscn" id="round"]
 
 [ext_resource type="PackedScene" path="res://games/minigame/gp_star_wave/arena_display.tscn" id="display"]
 
-[node name="Game" unique_id=234476643 groups=["party_minimal_hud"] instance=ExtResource("round")]
+[node name="Game" unique_id=234476643 groups=["party_minimal_hud"] instance=ExtResource("round") node_paths=PackedStringArray("pages")]
+pages = NodePath("ProtocolPages")
 layout_mode = 3
 anchors_preset = 15
 grow_horizontal = 2
@@ -56,4 +59,7 @@ text = "分数  0"
 horizontal_alignment = 2
 
 [node name="Arena" parent="GameCanvas/Stage" instance=ExtResource("display")]
+unique_name_in_owner = true
+
+[node name="ProtocolPages" parent="." instance=ExtResource("protocol_pages")]
 unique_name_in_owner = true

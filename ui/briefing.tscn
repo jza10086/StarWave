@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://games/protocols/godot_party_default_protocol/briefing/briefing_page.tscn" id="1"]
+
+[node name="Briefing" instance=ExtResource("1")]
+
+[node name="Title" parent="View/Layout/Center/Content" index="0"]
+text = "GodotPartyDefault · 星潮"
+
+[node name="Introduction" parent="View/Layout/Center/Content/Columns/RightColumn/InformationPanel/InformationMargin/Information/Rules/InformationScroll" index="0"]
+text = "连续三关、十种敌人、三名关底 Boss。个人赛 1–8 人按积分排名；团队赛 2/4/6/8 人分队挑战，通关队优先，未通关队按生存时长排名。"
+
+[editable path="View"]
