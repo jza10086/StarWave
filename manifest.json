@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
-  "core_api_major": 5,
-  "package_version": "1.0.14",
+  "core_api_major": 6,
+  "package_version": "1.0.15",
   "id": "gp_star_wave",
   "name": "GodotPartyDefault · 星潮",
   "kind": "minigame",
@@ -23,8 +23,8 @@
     "original"
   ],
   "dependencies": {
-    "godot_party_default_protocol": "1.0.13",
-    "godot_party_default_ui": "1.0.2"
+    "godot_party_default_protocol": "1.0.14",
+    "godot_party_default_ui": "1.0.3"
   },
   "adapters": [
     {
