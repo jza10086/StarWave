@@ -1,9 +1,5 @@
 extends "res://games/protocols/godot_party_default_protocol/ranked_round.gd"
 
-## Content-owned gameplay rules, independent of package compatibility.
-static func party_definition() -> Dictionary:
-	return {"player_counts": [1, 2, 3, 4, 5, 6, 7, 8], "player_count_rules": [{"when": {"mode": "团队赛"}, "counts": [2, 4, 6, 8]}], "tags": ["original"]}
-
 const Arena: Script = preload("res://games/minigame/gp_star_wave/arena.gd")
 const Display: PackedScene = preload("res://games/minigame/gp_star_wave/arena_display.tscn")
 var arenas: Array[RefCounted] = []
