@@ -1,7 +1,7 @@
 extends Node2D
 
 const Core: Variant = preload("res://games/minigame/gp_star_wave/game_core.gd")
-const FONT: Variant = preload("res://games/protocols/godot_party_default_protocol/fonts/NotoSansSC-UI.otf")
+const FONT: Variant = preload("res://games/assets/godot_party_default_ui/fonts/NotoSansSC-UI.otf")
 const ORIGIN: Variant = Vector2.ZERO
 var FIELD: Variant = Vector2(1440, 960)
 const CYAN: Variant = Color("62ebda")
