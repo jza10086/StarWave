@@ -22,5 +22,5 @@
 
 未带 `res://` 的源码路径以本包根目录为基准。
 
-- [M10 星潮　B　依赖 G01、G03](gp_star_wave_development.md)
-- [gp_star_wave_source](gp_star_wave_source.md)
+- [M10 星潮　B　依赖 G01、G03](GP_star_wave_development.md)
+- [GP_star_wave_source](GP_star_wave_source.md)

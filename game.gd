@@ -1,7 +1,7 @@
-extends "res://games/protocols/godot_party_default_protocol/ranked_round.gd"
+extends "res://games/protocols/GP_default_protocol/ranked_round.gd"
 
-const Arena: Script = preload("res://games/minigame/gp_star_wave/arena.gd")
-const Display: PackedScene = preload("res://games/minigame/gp_star_wave/arena_display.tscn")
+const Arena: Script = preload("res://games/minigame/GP_star_wave/arena.gd")
+const Display: PackedScene = preload("res://games/minigame/GP_star_wave/arena_display.tscn")
 var arenas: Array[RefCounted] = []
 var displays: Array[Node2D] = []
 var display_models: Array[RefCounted] = []

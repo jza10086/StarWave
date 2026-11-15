@@ -54,3 +54,6 @@ msgstr "生命  {lives}"
 
 msgid "hud.score"
 msgstr "分数  {score}"
+
+msgid "package.name"
+msgstr "GodotPartyDefault · 星潮"
